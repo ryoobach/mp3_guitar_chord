@@ -5,7 +5,6 @@ import android.app.Activity
 import android.os.Bundle
 import android.graphics.Color
 import android.view.Gravity
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -107,10 +106,10 @@ class MainActivity : Activity() {
         }
         root.addView(volumeTitle)
 
-        val volume = SeekBar(this).apply {
-            max = 100
-            progress = 70
-        }
+        // 볼륨 조절 SeekBar
+        val volume = SeekBar(this)
+        volume.max = 100
+        volume.progress = 70
         root.addView(volume)
 
         setContentView(root)
