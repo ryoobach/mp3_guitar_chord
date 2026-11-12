@@ -553,11 +553,31 @@ class MainActivity : Activity() {
             }
         }
 
-        adapter = ArrayAdapter(
+        adapter = object : ArrayAdapter<String>(
             this,
             android.R.layout.simple_list_item_multiple_choice,
             songNames
-        )
+        ) {
+            override fun getView(
+                position: Int,
+                convertView: View?,
+                parent: android.view.ViewGroup
+            ): View {
+                val item = super.getView(position, convertView, parent)
+                val label = item.findViewById<CheckedTextView>(android.R.id.text1)
+
+                // 앱의 짙은 남색 목록 배경에서도 곡 제목이 확실히 보이도록
+                // 기본 테마의 검은색 글자 대신 밝은 글자색을 지정합니다.
+                label.setTextColor(Color.rgb(245, 245, 245))
+                label.textSize = 14f
+                label.setPadding(dp(12), dp(9), dp(8), dp(9))
+                label.checkMarkTintList =
+                    colorList(Color.rgb(85, 213, 255))
+                item.setBackgroundColor(Color.rgb(16, 31, 50))
+
+                return item
+            }
+        }
 
         playlistView.adapter = adapter
 
