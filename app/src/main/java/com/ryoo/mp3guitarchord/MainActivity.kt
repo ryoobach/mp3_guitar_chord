@@ -197,8 +197,7 @@ class MainActivity : Activity() {
         }
 
         topBar.addView(
-            topTitle,
-            LinearLayout.LayoutParams(0, dp(40), 1f)
+            topTitle,            LinearLayout.LayoutParams(0, dp(40), 1f)
         )
 
         val homeButton = makeButton("⌂").apply {
@@ -335,7 +334,7 @@ class MainActivity : Activity() {
         }
 
         songTitle = TextView(this).apply {
-            text = "곡을 선택해 주세요"
+            text = "선택한 곡이 없습니다"
             textSize = if (isCompact) 12f else 15f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -397,8 +396,7 @@ class MainActivity : Activity() {
 
         val volumeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+            gravity = Gravity.CENTER_VERTICAL        }
 
         val volumeLabel = TextView(this).apply {
             text = "볼륨"
@@ -510,13 +508,13 @@ class MainActivity : Activity() {
 
         shuffleButton = makeButton("SHF").apply { contentDescription = "셔플" }
         val first = makeButton("⏮").apply { contentDescription = "처음곡" }
-        val previous = makeButton("◀").apply { contentDescription = "이전곡" }
+        val previous = makeButton("|◀").apply { contentDescription = "이전곡" }
         playButton = makeButton("▶").apply {
             contentDescription = "재생 또는 일시정지"
             textSize = 22f
         }
         val stop = makeButton("■").apply { contentDescription = "정지" }
-        val next = makeButton("▶").apply { contentDescription = "다음곡" }
+        val next = makeButton("▶|").apply { contentDescription = "다음곡" }
         val last = makeButton("⏭").apply { contentDescription = "마지막곡" }
         repeatButton = makeButton("RPT").apply { contentDescription = "반복 재생" }
 
@@ -597,8 +595,7 @@ class MainActivity : Activity() {
 
             setOnItemClickListener { _, _, position, _ ->
                 if (selectionMode) {
-                    if (!selectedPlaylistItems.add(position)) {
-                        selectedPlaylistItems.remove(position)
+                    if (!selectedPlaylistItems.add(position)) {                        selectedPlaylistItems.remove(position)
                     }
                     this@MainActivity.adapter.notifyDataSetChanged()
                 } else {
@@ -797,8 +794,7 @@ class MainActivity : Activity() {
             canvas.drawLine(49f, y.toFloat(), 59f, y.toFloat(), paint)
         }
         for (x in 51..57 step 3) {
-            canvas.drawLine(x.toFloat(), 9f, x.toFloat(), 56f, paint)
-        }
+            canvas.drawLine(x.toFloat(), 9f, x.toFloat(), 56f, paint)        }
 
         // 스트라토캐스터 특유의 헤드스톡
         val head = Path().apply {
@@ -997,8 +993,7 @@ class MainActivity : Activity() {
                 dp(if (isCompact) 27 else 32)
             ).apply {
                 setMargins(0, 0, dp(5), 0)
-            }
-        )
+            }        )
 
         val textColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1084,7 +1079,7 @@ class MainActivity : Activity() {
         if (!::songTitle.isInitialized) return
         val cleanTitle = title.trim()
         songTitle.text = if (cleanTitle.isEmpty()) {
-            "곡을 선택해 주세요"
+            "선택한 곡이 없습니다"
         } else {
             // 짧은 제목도 반드시 흐르도록 제목을 반복해 충분한 길이를 확보합니다.
             "$cleanTitle     •     $cleanTitle     •     "
@@ -1197,8 +1192,7 @@ class MainActivity : Activity() {
                     0 -> openFilePicker()
                     1 -> showUrlDialog()
                 }
-            }
-            .show()
+            }            .show()
     }
 
     private fun showUrlDialog() {
@@ -1397,8 +1391,7 @@ class MainActivity : Activity() {
 
         try {
             contentResolver.query(
-                uri,
-                null,
+                uri,                null,
                 null,                null,
                 null
             )?.use { cursor ->
@@ -1598,551 +1591,3 @@ class MainActivity : Activity() {
             progressBar.setPosition(0)
         }
     }
-
-    private fun playRandomTrack() {
-
-        if (playlist.isEmpty()) return
-
-        if (playlist.size == 1) {
-            playTrack(0)
-            return
-        }
-
-        val choices =
-            playlist.indices.filter { it != currentIndex }
-
-        playTrack(choices.random())
-    }
-
-    private fun playFirstTrack() {
-        if (playlist.isEmpty()) {
-            Toast.makeText(this, "재생목록이 비어 있습니다.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        playTrack(0)
-    }
-
-    private fun playLastTrack() {
-        if (playlist.isEmpty()) {
-            Toast.makeText(this, "재생목록이 비어 있습니다.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        playTrack(playlist.lastIndex)
-    }
-
-    private fun playNext() {
-
-        if (playlist.isEmpty()) return
-
-        if (shuffleMode) {
-            playRandomTrack()
-        } else if (currentIndex < playlist.lastIndex) {
-            playTrack(currentIndex + 1)
-        } else if (repeatMode == 1) {
-            playTrack(0)
-        } else {
-
-            Toast.makeText(
-                this,
-                "마지막 곡입니다.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    private fun playPrevious() {
-
-        if (playlist.isEmpty()) return
-
-        if (shuffleMode) {
-            playRandomTrack()
-        } else if (currentIndex > 0) {
-            playTrack(currentIndex - 1)
-        } else if (repeatMode == 1) {
-            playTrack(playlist.lastIndex)
-        } else {
-
-            Toast.makeText(
-                this,
-                "첫 번째 곡입니다.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    // --------------------------------------------------
-    // 플레이리스트 선택 / 삭제
-    // --------------------------------------------------
-
-    private fun toggleSelectionMode() {
-        selectionMode = !selectionMode
-        selectedPlaylistItems.clear()
-
-        selectButton.setTextColor(
-            if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE
-        )
-        selectButton.background = roundedBackground(
-            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
-            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
-        )
-
-        adapter.notifyDataSetChanged()
-
-        Toast.makeText(
-            this,
-            if (selectionMode) "삭제할 곡을 선택해 주세요." else "선택 모드를 종료했습니다.",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private fun removeSelected() {
-
-        if (!selectionMode) {
-            Toast.makeText(
-                this,
-                "먼저 SEL 버튼을 눌러 선택 모드로 전환해 주세요.",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
-        val removeIndexes = selectedPlaylistItems
-            .filter { it in playlist.indices }
-            .sortedDescending()
-
-        if (removeIndexes.isEmpty()) {
-            Toast.makeText(
-                this,
-                "삭제할 곡을 선택해 주세요.",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
-        val oldIndex = currentIndex
-        val currentRemoved = removeIndexes.contains(oldIndex)
-
-        if (currentRemoved) {
-            releaseCurrentPlayer()
-            currentIndex = -1
-
-            playButton.text = "▶"
-            resetTimeDisplay()
-            progressBar.reset()
-            resetChordDisplay()
-            setScrollingSongTitle("")
-        }
-
-        for (index in removeIndexes) {
-            playlist.removeAt(index)
-            songNames.removeAt(index)
-        }
-
-        if (!currentRemoved && oldIndex >= 0) {
-            currentIndex = oldIndex - removeIndexes.count { it < oldIndex }
-
-            if (currentIndex in songNames.indices) {
-                val currentUri = playlist[currentIndex]
-                val isCurrentStream =
-                    currentUri.scheme == "http" || currentUri.scheme == "https"
-                setScrollingSongTitle(
-                    if (isCurrentStream) "인터넷 방송" else songNames[currentIndex]
-                )
-            }
-        }
-
-        selectedPlaylistItems.clear()
-        selectionMode = false
-        selectButton.setTextColor(Color.WHITE)
-        selectButton.background = roundedBackground(
-            Color.rgb(35, 65, 88),
-            Color.rgb(64, 103, 130)
-        )
-        adapter.notifyDataSetChanged()
-
-        Toast.makeText(
-            this,
-            "${removeIndexes.size}개 항목을 삭제했습니다.",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private fun startIcyMetadataReader(streamUrl: String, expectedPlayer: MediaPlayer) {
-        icyMetadataReader?.stop()
-        val reader = IcyMetadataReader(streamUrl) { title ->
-            runOnUiThread {
-                if (player !== expectedPlayer || currentIndex !in songNames.indices) return@runOnUiThread
-                // 방송 곡 정보는 상단 제목에만 표시합니다.
-                // 플레이리스트에는 사용자가 입력한 방송 URL을 그대로 보존합니다.
-                setScrollingSongTitle(title)
-            }
-        }
-        icyMetadataReader = reader
-        reader.start()
-    }
-
-    private fun attachAudioVisualizer(audioSessionId: Int) {
-        releaseAudioVisualizer()
-
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 210)
-            }
-            return
-        }
-
-        try {
-            val visualizer = Visualizer(audioSessionId)
-            visualizer.captureSize = Visualizer.getCaptureSizeRange()[1]
-            visualizer.setDataCaptureListener(
-                object : Visualizer.OnDataCaptureListener {
-                    override fun onWaveFormDataCapture(
-                        visualizer: Visualizer?,
-                        waveform: ByteArray?,
-                        samplingRate: Int
-                    ) = Unit
-
-                    override fun onFftDataCapture(
-                        visualizer: Visualizer?,
-                        fft: ByteArray?,
-                        samplingRate: Int
-                    ) {
-                        if (fft == null || fft.size < 8) return
-                        val bars = FloatArray(48)
-                        val usableBins = fft.size / 2
-                        for (bar in bars.indices) {
-                            val start = (1 + bar * bar / bars.size * (usableBins - 1) / bars.size)
-                                .coerceIn(1, usableBins - 1)
-                            val end = (start + (bar / 3) + 1).coerceAtMost(usableBins)
-                            var peak = 0.0
-                            for (bin in start until end) {
-                                val real = fft[2 * bin].toDouble()
-                                val imaginary = fft[2 * bin + 1].toDouble()
-                                peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
-                            }
-                            bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
-                        }
-                        val detectedChord = ChordDetector.detect(fft, samplingRate)
-                        val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
-                        val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
-                        runOnUiThread {
-                            analyzerView.setSpectrum(bars)
-                            if (trackDuration > 0) {
-                                progressBar.recordSpectrum(playbackPosition, trackDuration, bars)
-                            } else {
-                                // 인터넷 방송은 전체 길이가 없으므로 최근 분석 기록을 왼쪽부터 누적합니다.
-                                progressBar.recordLiveSpectrum(bars)
-                            }
-                            if (detectedChord != null) updateDetectedChord(detectedChord)
-                        }
-                    }
-                },
-                (Visualizer.getMaxCaptureRate() / 2).coerceAtLeast(1000),
-                false,
-                true
-            )
-            visualizer.enabled = true
-            audioVisualizer = visualizer
-        } catch (_: Exception) {
-            analyzerView.setSpectrum(FloatArray(48))
-            Toast.makeText(
-                this,
-                "오디오 분석을 시작하지 못했습니다. 앱의 오디오 권한을 확인해 주세요.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    private fun updateDetectedChord(chord: String) {
-        val now = System.currentTimeMillis()
-
-        if (candidateChord == chord) {
-            candidateChordFrames++
-        } else {
-            candidateChord = chord
-            candidateChordFrames = 1
-            candidateChordSinceMs = now
-        }
-
-        // FFT 한두 프레임의 순간적인 오검출은 무시합니다.
-        // 연속 프레임과 최소 유지 시간을 모두 만족해야 코드 진행에 반영합니다.
-        val stableForMs = now - candidateChordSinceMs
-        if (candidateChordFrames >= 4 && stableForMs >= 250L && displayedChord != chord) {
-            displayedChord = chord
-
-            // 바로 앞 코드와 같으면 한 항목으로 합쳐 표시합니다.
-            if (chordHistory.lastOrNull() != chord) {
-                chordHistory.add(chord)
-                if (chordHistory.size > 10) {
-                    chordHistory.removeAt(0)
-                }
-                renderChordHistory(animate = true)
-            }
-        }
-    }
-
-    private fun renderChordHistory(animate: Boolean = false) {
-        if (chordSlots.size < 10) return
-
-        val visibleHistory = chordHistory.takeLast(10)
-        val firstVisibleSlot = 10 - visibleHistory.size
-
-        chordSlots.forEachIndexed { index, slot ->
-            val historyIndex = index - firstVisibleSlot
-            val hasChord = historyIndex in visibleHistory.indices
-            val isCurrentChord = hasChord && historyIndex == visibleHistory.lastIndex
-
-            slot.text = if (hasChord) visibleHistory[historyIndex] else ""
-            slot.setTextColor(
-                when {
-                    isCurrentChord -> Color.rgb(85, 213, 255)
-                    hasChord -> Color.rgb(180, 199, 216)
-                    else -> Color.rgb(75, 94, 113)
-                }
-            )
-            slot.background = if (isCurrentChord) {
-                roundedBackground(
-                    Color.rgb(22, 61, 83),
-                    Color.rgb(85, 213, 255)
-                )
-            } else {
-                null
-            }
-            slot.alpha = if (isCurrentChord) 1.0f else if (hasChord) 0.88f else 0f
-
-            if (animate && isCurrentChord) {
-                slot.animate().cancel()
-                slot.alpha = 0.45f
-                slot.animate().alpha(1.0f).setDuration(180L).start()
-            } else {
-                slot.translationX = 0f
-            }
-        }
-    }
-
-    private fun resetChordDisplay() {
-        candidateChord = null
-        candidateChordFrames = 0
-        candidateChordSinceMs = 0L
-        displayedChord = null
-        chordHistory.clear()
-
-        chordSlots.forEach {
-            it.text = ""
-            it.alpha = 0f
-            it.background = null
-            it.setTextColor(Color.rgb(125, 151, 174))
-            it.translationX = 0f
-        }
-    }
-
-    private fun releaseAudioVisualizer() {
-        try {
-            audioVisualizer?.enabled = false
-            audioVisualizer?.release()
-        } catch (_: Exception) {
-        }
-        audioVisualizer = null
-        if (::analyzerView.isInitialized) {
-            analyzerView.setSpectrum(FloatArray(48))
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 210) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            ) {
-                player?.let { if (isPrepared) attachAudioVisualizer(it.audioSessionId) }
-            } else {
-                Toast.makeText(
-                    this,
-                    "기타 코드 분석을 위해 오디오 권한을 허용해 주세요.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }
-
-    // --------------------------------------------------
-    // 플레이어 정리 / 시간 표시
-    // --------------------------------------------------
-
-    private fun releaseCurrentPlayer() {
-
-        icyMetadataReader?.stop()
-        icyMetadataReader = null
-        releaseAudioVisualizer()
-        isPrepared = false
-
-        try {
-            player?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            player?.release()
-        } catch (_: Exception) {
-        }
-
-        player = null
-    }
-
-    private fun formatTime(milliseconds: Int): String {
-
-        val seconds =
-            milliseconds.coerceAtLeast(0) / 1000
-
-        return String.format(
-            Locale.getDefault(),
-            "%02d:%02d",
-            seconds / 60,
-            seconds % 60
-        )
-    }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
-
-    override fun onDestroy() {
-
-        handler.removeCallbacks(updateTask)
-        releaseCurrentPlayer()
-
-        super.onDestroy()
-    }
-}
-
-
-/**
- * Reads ICY StreamTitle metadata from a parallel HTTP connection.
- * The audio itself continues to be played by MediaPlayer.
- */
-private class IcyMetadataReader(
-    private val streamUrl: String,
-    private val onTitle: (String) -> Unit
-) {
-    @Volatile private var running = false
-    @Volatile private var connection: HttpURLConnection? = null
-    private var worker: Thread? = null
-
-    fun start() {
-        if (running) return
-        running = true
-        worker = Thread({
-            var localConnection: HttpURLConnection? = null
-            try {
-                localConnection = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 10000
-                    readTimeout = 30000
-                    instanceFollowRedirects = true
-                    setRequestProperty("Icy-MetaData", "1")
-                    setRequestProperty("User-Agent", "EasyMP3GuitarChord/1.51")
-                }
-                connection = localConnection
-                localConnection.connect()
-                val interval = localConnection.getHeaderField("icy-metaint")?.toIntOrNull()
-                    ?: localConnection.getHeaderField("Icy-MetaInt")?.toIntOrNull()
-                    ?: return@Thread
-                if (interval <= 0) return@Thread
-
-                localConnection.inputStream.use { input ->
-                    val audioBuffer = ByteArray(8192)
-                    while (running) {
-                        if (!readFully(input, audioBuffer, interval)) break
-                        val lengthByte = input.read()
-                        if (lengthByte < 0) break
-                        val metadataLength = lengthByte * 16
-                        if (metadataLength <= 0) continue
-                        val metadata = ByteArray(metadataLength)
-                        if (!readFully(input, metadata, metadataLength)) break
-                        val raw = decodeMetadata(metadata)
-                            .trim('\u0000', ' ', '\r', '\n', '\t')
-                        if (raw.isEmpty()) continue
-                        val match = Regex("(?i)StreamTitle\\s*=\\s*['\\\"]([^'\\\"]*)['\\\"]")
-                            .find(raw)
-                        val title = match?.groupValues?.getOrNull(1)?.trim().orEmpty()
-                        if (title.isNotEmpty()) onTitle(title)
-                    }
-                }
-            } catch (_: Exception) {
-                // Metadata is optional; playback continues if the station does not provide it.
-            } finally {
-                running = false
-                try { localConnection?.disconnect() } catch (_: Exception) { }
-                if (connection === localConnection) connection = null
-            }
-        }, "ICY-Metadata-Reader").apply {
-            isDaemon = true
-            start()
-        }
-    }
-
-    /**
-     * Radio stations do not all use the same character encoding for ICY metadata.
-     * Prefer strict UTF-8, then try Korean legacy encodings for CP949/EUC-KR stations.
-     */
-    private fun decodeMetadata(bytes: ByteArray): String {
-        val charsets = listOfNotNull(
-            Charsets.UTF_8,
-            runCatching { java.nio.charset.Charset.forName("EUC-KR") }.getOrNull(),
-            runCatching { java.nio.charset.Charset.forName("x-windows-949") }.getOrNull()
-        )
-
-        var bestText = ""
-        var bestScore = Int.MIN_VALUE
-
-        for (charset in charsets) {
-            try {
-                val decoder = charset.newDecoder()
-                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-                val candidate = decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
-                    .trim('\u0000', ' ', '\r', '\n', '\t')
-
-                val hangulCount = candidate.count {
-                    it in '\uAC00'..'\uD7A3' ||
-                        it in '\u1100'..'\u11FF' ||
-                        it in '\u3130'..'\u318F'
-                }
-                val replacementCount = candidate.count { it == '\uFFFD' }
-                val controlCount = candidate.count {
-                    it.isISOControl() && it != '\r' && it != '\n' && it != '\t'
-                }
-                val score = hangulCount * 5 - replacementCount * 20 - controlCount * 3
-
-                if (score > bestScore) {
-                    bestScore = score
-                    bestText = candidate
-                }
-            } catch (_: Exception) {
-                // Try the next supported encoding.
-            }
-        }
-
-        return bestText
-    }
-
-    private fun readFully(input: java.io.InputStream, buffer: ByteArray, count: Int): Boolean {
-        var offset = 0
-        while (offset < count && running) {
-            val read = input.read(buffer, offset, minOf(buffer.size, count - offset))
-            if (read < 0) return false
-            offset += read
-        }
-        return offset == count
-    }
-
-    fun stop() {
-        running = false
-        try { connection?.disconnect() } catch (_: Exception) { }
-        connection = null
-        worker?.interrupt()
-        worker = null
-    }
-}
