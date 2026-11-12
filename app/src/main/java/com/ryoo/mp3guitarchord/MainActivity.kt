@@ -5,6 +5,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -111,6 +112,60 @@ class MainActivity : Activity() {
 
     // 상태 표시줄과 내비게이션 바의 아이콘을 어두운 앱 배경에 맞춰
     // 항상 밝게 표시합니다. Android 15의 투명 시스템 바에서도 적용됩니다.
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+
+        // 화면 회전은 화면 배치만 다시 만들고, 재생기와 재생목록은 유지합니다.
+        configureSystemBars()
+        isSeeking = false
+        chordSlots.clear()
+        createScreen()
+
+        adapter.notifyDataSetChanged()
+        updateModeButtons()
+        renderChordHistory(animate = false)
+
+        if (currentIndex in songNames.indices) {
+            setScrollingSongTitle(songNames[currentIndex])
+        } else {
+            setScrollingSongTitle("")
+        }
+
+        selectButton.setTextColor(
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE
+        )
+        selectButton.background = roundedBackground(
+            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
+        )
+
+        val mp = player
+        playButton.text = when {
+            mp == null -> "▶"
+            !isPrepared -> "…"
+            mp.isPlaying -> "Ⅱ"
+            else -> "▶"
+        }
+
+        if (mp != null && isPrepared) {
+            try {
+                val duration = mp.duration
+                val position = mp.currentPosition
+                if (duration > 0) {
+                    progressBar.setDuration(duration)
+                    progressBar.setPosition(position)
+                }
+                updateTimeDisplay(position, duration)
+                updateProgressPercent(position, duration)
+                updateLyrics(position)
+            } catch (_: Exception) {
+                // 재생 중인 MediaPlayer 상태는 그대로 유지합니다.
+            }
+        } else {
+            updateLyrics(0)
+        }
+    }
+
     private fun configureSystemBars() {
         val appBackground = Color.rgb(8, 15, 27)
 
@@ -137,6 +192,8 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun createScreen() {
+
+        chordSlots.clear()
 
         val widthDp = resources.configuration.screenWidthDp
         val heightDp = resources.configuration.screenHeightDp
