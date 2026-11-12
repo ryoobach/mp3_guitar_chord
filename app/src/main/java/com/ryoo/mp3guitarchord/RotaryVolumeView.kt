@@ -64,14 +64,9 @@ class RotaryVolumeView(
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                 val dx = event.x - centerX
                 val dy = event.y - centerY
-                var degrees = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-                degrees = (degrees + 360f) % 360f
-                val adjusted = when {
-                    degrees < 135f -> if (degrees < 45f) 270f else 0f
-                    degrees > 225f -> 90f + (degrees - 225f) * 2f / 3f
-                    else -> 0f
-                }
-                val next = adjusted.toInt().coerceIn(0, 100)
+                val degrees = (Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 360f) % 360f
+                val sweep = (degrees - 135f + 360f) % 360f
+                val next = (sweep.coerceIn(0f, 270f) / 270f * 100f).toInt()
                 if (next != value) {
                     value = next
                     onVolumeChanged(value)
