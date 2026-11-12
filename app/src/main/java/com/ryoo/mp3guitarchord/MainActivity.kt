@@ -447,8 +447,7 @@ class MainActivity : Activity() {
                     updateTimeDisplay(position, player?.duration ?: 0)
                 }
             }
-            setOnSeekFinished { position ->                if (isPrepared && (player?.duration ?: 0) > 0) {
-                    player?.seekTo(position)
+            setOnSeekFinished { position ->                if (isPrepared && (player?.duration ?: 0) > 0) {                    player?.seekTo(position)
                 }
                 isSeeking = false
             }
@@ -473,16 +472,38 @@ class MainActivity : Activity() {
             setPadding(dp(3), dp(2), dp(3), dp(2))
         }
 
-        shuffleButton = makeButton("SHF")
-        val previous = makeButton("◀")
-        playButton = makeButton("▶")
-        val stop = makeButton("■")
-        val next = makeButton("▶▶")
-        repeatButton = makeButton("RPT")
+        shuffleButton = makeButton("SHF").apply {
+            contentDescription = "셔플"
+        }
+        val first = makeButton("⏮").apply {
+            contentDescription = "처음곡"
+        }
+        val previous = makeButton("◀").apply {
+            contentDescription = "이전곡"
+        }
+        playButton = makeButton("▶").apply {
+            contentDescription = "재생 또는 일시정지"
+        }
+        val stop = makeButton("■").apply {
+            contentDescription = "정지"
+        }
+        val next = makeButton("▶▶").apply {
+            contentDescription = "다음곡"
+        }
+        val last = makeButton("⏭").apply {
+            contentDescription = "마지막곡"
+        }
+        repeatButton = makeButton("RPT").apply {
+            contentDescription = "반복 재생"
+        }
 
         shuffleButton.setOnClickListener {
             shuffleMode = !shuffleMode
             updateModeButtons()
+        }
+
+        first.setOnClickListener {
+            playFirstTrack()
         }
 
         previous.setOnClickListener {
@@ -501,6 +522,10 @@ class MainActivity : Activity() {
             playNext()
         }
 
+        last.setOnClickListener {
+            playLastTrack()
+        }
+
         repeatButton.setOnClickListener {
             repeatMode = (repeatMode + 1) % 3
             updateModeButtons()
@@ -509,17 +534,19 @@ class MainActivity : Activity() {
         val controlHeight = if (isCompact) 39 else 44
 
         controls.addView(shuffleButton, controlParams(controlHeight))
+        controls.addView(first, controlParams(controlHeight))
         controls.addView(previous, controlParams(controlHeight))
 
         controls.addView(
             playButton,
-            LinearLayout.LayoutParams(0, dp(controlHeight), 1.2f).apply {
+            LinearLayout.LayoutParams(0, dp(controlHeight), 1.15f).apply {
                 setMargins(dp(2), 0, dp(2), 0)
             }
         )
 
         controls.addView(stop, controlParams(controlHeight))
         controls.addView(next, controlParams(controlHeight))
+        controls.addView(last, controlParams(controlHeight))
         controls.addView(repeatButton, controlParams(controlHeight))
 
         playerPanel.addView(controls)
@@ -897,8 +924,7 @@ class MainActivity : Activity() {
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
             textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(85, 213, 255))
+            typeface = Typeface.DEFAULT_BOLD            setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
             ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
@@ -1347,8 +1373,7 @@ class MainActivity : Activity() {
                 "파일 불러오기 실패",
                 Toast.LENGTH_SHORT
             ).show()
-        }
-    }
+        }    }
 
     private fun getFileName(uri: Uri): String {
 
@@ -1564,6 +1589,28 @@ class MainActivity : Activity() {
             playlist.indices.filter { it != currentIndex }
 
         playTrack(choices.random())
+    }
+
+    private fun playFirstTrack() {
+
+        if (playlist.isEmpty()) {
+            Toast.makeText(this, "재생목록이 비어 있습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 셔플 설정과 관계없이 재생목록의 첫 곡으로 바로 이동합니다.
+        playTrack(0)
+    }
+
+    private fun playLastTrack() {
+
+        if (playlist.isEmpty()) {
+            Toast.makeText(this, "재생목록이 비어 있습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 셔플 설정과 관계없이 재생목록의 마지막 곡으로 바로 이동합니다.
+        playTrack(playlist.lastIndex)
     }
 
     private fun playNext() {
@@ -1798,117 +1845,3 @@ class MainActivity : Activity() {
 
         val firstVisibleSlot = 5 - chordHistory.size
         chordSlots.forEachIndexed { index, slot ->
-            val historyIndex = index - firstVisibleSlot
-            val hasChord = historyIndex in chordHistory.indices
-            slot.text = if (hasChord) chordHistory[historyIndex] else "—"
-
-            val isLatestChord = hasChord && index == 4
-            slot.textSize = if (isLatestChord) {
-                slot.textSize * 1.0f
-            } else {
-                slot.textSize
-            }
-            slot.setTextColor(
-                when {
-                    isLatestChord -> Color.rgb(85, 213, 255)
-                    hasChord -> Color.rgb(180, 199, 216)
-                    else -> Color.rgb(75, 94, 113)
-                }
-            )
-            slot.alpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
-        }
-    }
-
-    private fun resetChordDisplay() {
-        candidateChord = null
-        candidateChordFrames = 0
-        displayedChord = null
-        chordHistory.clear()
-        if (chordSlots.isNotEmpty()) {
-            chordSlots.forEach {
-                it.text = "—"
-                it.alpha = 1.0f
-                it.setTextColor(Color.rgb(125, 151, 174))
-            }
-        }
-    }
-
-    private fun releaseAudioVisualizer() {
-        try {
-            audioVisualizer?.enabled = false
-            audioVisualizer?.release()
-        } catch (_: Exception) {
-        }
-        audioVisualizer = null
-        if (::analyzerView.isInitialized) {
-            analyzerView.setSpectrum(FloatArray(48))
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 210) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            ) {
-                player?.let { if (isPrepared) attachAudioVisualizer(it.audioSessionId) }
-            } else {
-                Toast.makeText(
-                    this,
-                    "기타 코드 분석을 위해 오디오 권한을 허용해 주세요.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }
-
-    // --------------------------------------------------
-    // 플레이어 정리 / 시간 표시
-    // --------------------------------------------------
-
-    private fun releaseCurrentPlayer() {
-
-        releaseAudioVisualizer()
-        isPrepared = false
-
-        try {
-            player?.stop()
-        } catch (_: Exception) {
-        }
-
-        try {
-            player?.release()
-        } catch (_: Exception) {
-        }
-
-        player = null
-    }
-
-    private fun formatTime(milliseconds: Int): String {
-
-        val seconds =
-            milliseconds.coerceAtLeast(0) / 1000
-
-        return String.format(
-            Locale.getDefault(),
-            "%02d:%02d",
-            seconds / 60,
-            seconds % 60
-        )
-    }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
-
-    override fun onDestroy() {
-
-        handler.removeCallbacks(updateTask)
-        releaseCurrentPlayer()
-
-        super.onDestroy()
-    }
-}
