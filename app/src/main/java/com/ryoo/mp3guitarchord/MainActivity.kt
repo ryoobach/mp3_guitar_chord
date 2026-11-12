@@ -2,6 +2,7 @@
 package com.ryoo.mp3guitarchord
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -11,42 +12,48 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.graphics.Color
-import android.view.Gravity
-import android.widget.*
 import android.graphics.Typeface
+import android.view.Gravity
+import android.view.View
+import android.widget.*
+import java.util.Locale
 
 class MainActivity : Activity() {
 
-    private val bg = Color.rgb(13, 18, 28)
-    private val panel = Color.rgb(5, 12, 22)
-    private val cyan = Color.rgb(0, 220, 255)
-    private val yellow = Color.rgb(255, 210, 40)
-    private val white = Color.WHITE
+    private val playlist = mutableListOf<Uri>()
+    private val songNames = mutableListOf<String>()
 
-    private var mediaPlayer: MediaPlayer? = null
-    private var selectedUri: Uri? = null
+    private var player: MediaPlayer? = null
+    private var currentIndex = -1
+    private var isPrepared = false
+    private var isSeeking = false
 
+    private lateinit var titleText: TextView
     private lateinit var timeText: TextView
     private lateinit var chordText: TextView
-    private lateinit var volumeBar: SeekBar
-    private lateinit var progressBar: SeekBar
-    private lateinit var fileText: TextView
     private lateinit var playButton: Button
+    private lateinit var progressBar: SeekBar
+    private lateinit var volumeBar: SeekBar
+    private lateinit var playlistView: ListView
+    private lateinit var adapter: ArrayAdapter<String>
 
     private val handler = Handler(Looper.getMainLooper())
 
-    private val progressUpdater = object : Runnable {
+    private val updateTask = object : Runnable {
         override fun run() {
-            val player = mediaPlayer
-            if (player != null) {
+            val mp = player
+            if (mp != null && isPrepared) {
                 try {
-                    if (player.isPlaying) {
-                        timeText.text = formatTime(player.currentPosition)
-                        if (player.duration > 0) {
-                            progressBar.progress =
-                                player.currentPosition * 1000 / player.duration
-                        }
+                    val position = mp.currentPosition
+                    val duration = mp.duration
+
+                    if (!isSeeking) {
+                        progressBar.max = duration.coerceAtLeast(1)
+                        progressBar.progress = position
                     }
+
+                    timeText.text =
+                        "${formatTime(position)} / ${formatTime(duration)}"
                 } catch (_: Exception) {
                 }
             }
@@ -56,189 +63,151 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createScreen()
+        handler.post(updateTask)
+    }
 
-        window.statusBarColor = bg
-        window.navigationBarColor = bg
-
+    private fun createScreen() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 18, 18, 12)
-            setBackgroundColor(bg)
+            setPadding(dp(14), dp(12), dp(14), dp(10))
+            setBackgroundColor(Color.rgb(15, 20, 29))
         }
 
-        // 앱 제목
-        val title = TextView(this).apply {
+        titleText = TextView(this).apply {
             text = "EASY MP3 GUITAR CHORD"
             textSize = 21f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(cyan)
             gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 18)
+            setTextColor(Color.rgb(0, 220, 255))
+            setPadding(0, dp(8), 0, dp(12))
         }
-        root.addView(title)
+        root.addView(titleText)
 
-        // 재생 시간
         timeText = TextView(this).apply {
-            text = "00:00"
-            textSize = 34f
-            typeface = Typeface.MONOSPACE
-            setTextColor(yellow)
+            text = "00:00 / 00:00"
+            textSize = 17f
             gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 12)
+            setTextColor(Color.YELLOW)
+            setPadding(0, dp(5), 0, dp(8))
         }
         root.addView(timeText)
 
-        // 기타 코드 표시
         chordText = TextView(this).apply {
-            text = "C     G     Am     F     C     G"
+            text = "C     G     Am     F"
             textSize = 27f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(cyan)
             gravity = Gravity.CENTER
-            setSingleLine(true)
-            setPadding(8, 24, 8, 24)
-            setBackgroundColor(panel)
+            setTextColor(Color.rgb(0, 230, 255))
+            setPadding(0, dp(15), 0, dp(15))
         }
         root.addView(chordText)
 
-        // 볼륨 조절 - 코드 표시 바로 아래
-        val volumeLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(4, 4, 4, 4)
-        }
-
-        val volumeLabel = TextView(this).apply {
-            text = "VOL"
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(yellow)
-        }
-
+        // 볼륨 조절 바: 코드 표시 바로 아래
         volumeBar = SeekBar(this).apply {
             max = 100
-            progress = 70
+            progress = 80
             progressTintList =
-                android.content.res.ColorStateList.valueOf(cyan)
+                android.content.res.ColorStateList.valueOf(Color.YELLOW)
             thumbTintList =
-                android.content.res.ColorStateList.valueOf(yellow)
-        }
+                android.content.res.ColorStateList.valueOf(Color.YELLOW)
 
-        volumeBar.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
+            setOnSeekBarChangeListener(object :
+                SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(
                     seekBar: SeekBar?,
-                    progress: Int,
+                    value: Int,
                     fromUser: Boolean
                 ) {
-                    val volume = progress / 100f
-                    mediaPlayer?.setVolume(volume, volume)
+                    val volume = value / 100f
+                    player?.setVolume(volume, volume)
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            }
-        )
-
-        volumeLayout.addView(volumeLabel)
-        volumeLayout.addView(
-            volumeBar,
-            LinearLayout.LayoutParams(0, 48, 1f)
-        )
-        root.addView(volumeLayout)
-
-        // 재생 위치 표시
-        progressBar = SeekBar(this).apply {
-            max = 1000
-            progress = 0
-            progressTintList =
-                android.content.res.ColorStateList.valueOf(yellow)
-            thumbTintList =
-                android.content.res.ColorStateList.valueOf(cyan)
+            })
         }
+        root.addView(volumeBar)
 
-        progressBar.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
+        progressBar = SeekBar(this).apply {
+            progressTintList =
+                android.content.res.ColorStateList.valueOf(
+                    Color.rgb(0, 220, 255)
+                )
+
+            setOnSeekBarChangeListener(object :
+                SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(
                     seekBar: SeekBar?,
-                    progress: Int,
+                    value: Int,
                     fromUser: Boolean
                 ) {
-                    if (fromUser) {
-                        val player = mediaPlayer
-                        if (player != null && player.duration > 0) {
-                            val position =
-                                progress * player.duration / 1000
-                            player.seekTo(position)
-                            timeText.text = formatTime(position)
-                        }
+                    if (fromUser && isPrepared) {
+                        timeText.text =
+                            "${formatTime(value)} / ${formatTime(player?.duration ?: 0)}"
                     }
                 }
 
-                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-            }
-        )
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                    isSeeking = true
+                }
+
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    if (isPrepared) {
+                        player?.seekTo(seekBar?.progress ?: 0)
+                    }
+                    isSeeking = false
+                }
+            })
+        }
         root.addView(progressBar)
 
-        // 재생 버튼
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        val controlRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            setPadding(0, 16, 0, 16)
+            orientation = LinearLayout.HORIZONTAL
         }
 
-        val previous = makeButton("|◀")
-        previous.setOnClickListener {
-            Toast.makeText(
-                this,
-                "이전 곡 기능은 재생목록 단계에서 추가합니다.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-
+        val previousButton = makeButton("◀")
         playButton = makeButton("▶")
-        playButton.setOnClickListener {
-            togglePlayback()
-        }
+        val nextButton = makeButton("▶▶")
 
-        val next = makeButton("▶|")
-        next.setOnClickListener {
-            Toast.makeText(
-                this,
-                "다음 곡 기능은 재생목록 단계에서 추가합니다.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+        previousButton.setOnClickListener { playPrevious() }
+        playButton.setOnClickListener { togglePlayback() }
+        nextButton.setOnClickListener { playNext() }
 
-        controls.addView(previous)
-        controls.addView(playButton)
-        controls.addView(next)
-        root.addView(controls)
+        controlRow.addView(previousButton, buttonParams())
+        controlRow.addView(playButton, buttonParams())
+        controlRow.addView(nextButton, buttonParams())
+        root.addView(controlRow)
 
-        // 재생목록 제목
         val playlistTitle = TextView(this).apply {
             text = "PLAY LIST"
             textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(cyan)
-            setPadding(4, 12, 4, 10)
+            setTextColor(Color.YELLOW)
+            setPadding(0, dp(12), 0, dp(6))
         }
         root.addView(playlistTitle)
 
-        // 선택된 파일 표시
-        fileText = TextView(this).apply {
-            text = "MP3 파일을 추가해 주세요."
-            textSize = 15f
-            setTextColor(white)
-            setPadding(14, 18, 14, 18)
-            setBackgroundColor(panel)
-            setOnClickListener {
-                openFilePicker()
+        playlistView = ListView(this).apply {
+            choiceMode = ListView.CHOICE_MODE_MULTIPLE
+            setBackgroundColor(Color.rgb(24, 31, 43))
+            setCacheColorHint(Color.TRANSPARENT)
+            setOnItemClickListener { _, _, position, _ ->
+                currentIndex = position
+                playTrack(position)
             }
         }
+
+        adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_multiple_choice,
+            songNames
+        )
+        playlistView.adapter = adapter
+
         root.addView(
-            fileText,
+            playlistView,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
@@ -246,64 +215,54 @@ class MainActivity : Activity() {
             )
         )
 
-        // ADD / REM / SEL 버튼
-        val listControls = LinearLayout(this).apply {
+        val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
 
         val addButton = makeButton("ADD")
-        addButton.setOnClickListener {
-            openFilePicker()
-        }
-
         val removeButton = makeButton("REM")
-        removeButton.setOnClickListener {
-            releasePlayer()
-            selectedUri = null
-            fileText.text = "MP3 파일을 추가해 주세요."
-            timeText.text = "00:00"
-            progressBar.progress = 0
-            playButton.text = "▶"
-        }
-
         val selectButton = makeButton("SEL")
-        selectButton.setOnClickListener {
-            Toast.makeText(
-                this,
-                "전체 선택 기능은 재생목록 관리 단계에서 추가합니다.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
 
-        listControls.addView(addButton)
-        listControls.addView(removeButton)
-        listControls.addView(selectButton)
-        root.addView(listControls)
+        addButton.setOnClickListener { openFilePicker() }
+        removeButton.setOnClickListener { removeSelected() }
+        selectButton.setOnClickListener { showSelectionMenu() }
 
-        // 개발자 표시
+        bottomRow.addView(addButton, buttonParams())
+        bottomRow.addView(removeButton, buttonParams())
+        bottomRow.addView(selectButton, buttonParams())
+        root.addView(bottomRow)
+
         val developer = TextView(this).apply {
             text = "Ryoo Jaesang & 최피디"
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(yellow)
             gravity = Gravity.CENTER
-            setPadding(0, 16, 0, 6)
+            setTextColor(Color.rgb(0, 220, 255))
+            setPadding(0, dp(10), 0, dp(2))
         }
         root.addView(developer)
 
         setContentView(root)
-        handler.post(progressUpdater)
     }
 
     private fun makeButton(label: String): Button {
         return Button(this).apply {
             text = label
             textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(cyan)
-            setBackgroundColor(Color.rgb(28, 38, 52))
+            setTextColor(Color.WHITE)
             isAllCaps = false
+            setBackgroundColor(Color.rgb(35, 65, 88))
+        }
+    }
+
+    private fun buttonParams(): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(
+            0,
+            dp(48),
+            1f
+        ).apply {
+            setMargins(dp(4), dp(5), dp(4), dp(5))
         }
     }
 
@@ -311,11 +270,12 @@ class MainActivity : Activity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        startActivityForResult(intent, 1001)
+        startActivityForResult(intent, 100)
     }
 
-    @Deprecated("Deprecated Android API retained for compatibility")
+    @Deprecated("Deprecated in Android, retained for compatibility")
     override fun onActivityResult(
         requestCode: Int,
         resultCode: Int,
@@ -323,147 +283,308 @@ class MainActivity : Activity() {
     ) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode == 1001 &&
-            resultCode == Activity.RESULT_OK
-        ) {
-            val uri = data?.data ?: return
+        if (requestCode != 100 || resultCode != RESULT_OK || data == null) {
+            return
+        }
 
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: Exception) {
+        val added = mutableListOf<Uri>()
+
+        try {
+            if (data.clipData != null) {
+                val clip = data.clipData!!
+                for (i in 0 until clip.itemCount) {
+                    added.add(clip.getItemAt(i).uri)
+                }
+            } else {
+                data.data?.let { added.add(it) }
             }
 
-            selectedUri = uri
-            fileText.text = getFileName(uri)
-            loadAudio(uri)
+            for (uri in added) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {
+                }
+
+                if (!playlist.contains(uri)) {
+                    playlist.add(uri)
+                    songNames.add(getFileName(uri))
+                }
+            }
+
+            adapter.notifyDataSetChanged()
+
+            if (currentIndex == -1 && playlist.isNotEmpty()) {
+                currentIndex = 0
+                playlistView.setItemChecked(0, true)
+            }
+
+            Toast.makeText(
+                this,
+                "${added.size}개 파일을 불러왔습니다.",
+                Toast.LENGTH_SHORT
+            ).show()
+
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                "파일을 불러오지 못했습니다.",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     private fun getFileName(uri: Uri): String {
-        var name = "선택한 MP3 파일"
+        var name = uri.lastPathSegment ?: "Audio"
 
-        contentResolver.query(
-            uri,
-            null,
-            null,
-            null,
-            null
-        )?.use {
-            if (it.moveToFirst()) {
-                val index =
-                    it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0) {
-                    name = it.getString(index) ?: name
+        try {
+            contentResolver.query(
+                uri,
+                null,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(
+                        OpenableColumns.DISPLAY_NAME
+                    )
+                    if (index >= 0) {
+                        name = cursor.getString(index) ?: name
+                    }
                 }
             }
+        } catch (_: Exception) {
         }
 
         return name
     }
 
-    private fun loadAudio(uri: Uri) {
-        releasePlayer()
+    private fun playTrack(index: Int) {
+        if (index !in playlist.indices) return
 
-        timeText.text = "00:00"
-        progressBar.progress = 0
-        playButton.text = "..."
+        releaseCurrentPlayer()
 
-        val player = MediaPlayer()
-        mediaPlayer = player
+        currentIndex = index
+        playlistView.setItemChecked(index, true)
+        playButton.text = "…"
+        timeText.text = "00:00 / 00:00"
 
         try {
-            player.setAudioAttributes(
+            val mp = MediaPlayer()
+            player = mp
+            isPrepared = false
+
+            mp.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )
 
-            player.setDataSource(this, uri)
+            mp.setDataSource(this, playlist[index])
 
-            player.setOnPreparedListener {
-                val volume = volumeBar.progress / 100f
-                it.setVolume(volume, volume)
-                it.start()
+            mp.setOnPreparedListener { preparedPlayer ->
+                if (player !== preparedPlayer) return@setOnPreparedListener
+
+                isPrepared = true
+                preparedPlayer.setVolume(
+                    volumeBar.progress / 100f,
+                    volumeBar.progress / 100f
+                )
+                progressBar.max = preparedPlayer.duration.coerceAtLeast(1)
+                preparedPlayer.start()
                 playButton.text = "Ⅱ"
             }
 
-            player.setOnCompletionListener {
-                playButton.text = "▶"
-                progressBar.progress = 0
-                timeText.text = "00:00"
+            mp.setOnCompletionListener {
+                playNext()
             }
 
-            player.setOnErrorListener { _, _, _ ->
-                playButton.text = "▶"
+            mp.setOnErrorListener { _, _, _ ->
                 Toast.makeText(
                     this,
-                    "파일을 재생할 수 없습니다.",
-                    Toast.LENGTH_LONG
+                    "이 파일을 재생할 수 없습니다.",
+                    Toast.LENGTH_SHORT
                 ).show()
+                playButton.text = "▶"
+                isPrepared = false
                 true
             }
 
-            player.prepareAsync()
+            mp.prepareAsync()
 
-        } catch (_: Exception) {
-            releasePlayer()
+        } catch (e: Exception) {
+            releaseCurrentPlayer()
             playButton.text = "▶"
             Toast.makeText(
                 this,
-                "파일을 여는 중 오류가 발생했습니다.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    private fun togglePlayback() {
-        val player = mediaPlayer
-
-        if (player == null) {
-            if (selectedUri == null) {
-                openFilePicker()
-            }
-            return
-        }
-
-        try {
-            if (player.isPlaying) {
-                player.pause()
-                playButton.text = "▶"
-            } else {
-                player.start()
-                playButton.text = "Ⅱ"
-            }
-        } catch (_: Exception) {
-            Toast.makeText(
-                this,
-                "음악을 준비하고 있습니다.",
+                "재생 중 오류가 발생했습니다.",
                 Toast.LENGTH_SHORT
             ).show()
         }
     }
 
+    private fun togglePlayback() {
+        val mp = player
+
+        if (mp == null) {
+            if (currentIndex in playlist.indices) {
+                playTrack(currentIndex)
+            } else if (playlist.isNotEmpty()) {
+                playTrack(0)
+            } else {
+                Toast.makeText(
+                    this,
+                    "먼저 MP3 파일을 추가해 주세요.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            return
+        }
+
+        if (!isPrepared) return
+
+        if (mp.isPlaying) {
+            mp.pause()
+            playButton.text = "▶"
+        } else {
+            mp.start()
+            playButton.text = "Ⅱ"
+        }
+    }
+
+    private fun playPrevious() {
+        if (playlist.isEmpty()) return
+
+        val index = if (currentIndex <= 0) {
+            playlist.lastIndex
+        } else {
+            currentIndex - 1
+        }
+        playTrack(index)
+    }
+
+    private fun playNext() {
+        if (playlist.isEmpty()) return
+
+        val index = if (currentIndex >= playlist.lastIndex) {
+            0
+        } else {
+            currentIndex + 1
+        }
+        playTrack(index)
+    }
+
+    private fun showSelectionMenu() {
+        val options = arrayOf(
+            "전체 선택",
+            "전체 선택 해제"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("재생목록 선택")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        for (i in songNames.indices) {
+                            playlistView.setItemChecked(i, true)
+                        }
+                    }
+                    1 -> playlistView.clearChoices()
+                }
+            }
+            .show()
+    }
+
+    private fun removeSelected() {
+        val checked = playlistView.checkedItemPositions
+        val removeIndexes = mutableListOf<Int>()
+
+        for (i in 0 until checked.size()) {
+            if (checked.valueAt(i)) {
+                removeIndexes.add(checked.keyAt(i))
+            }
+        }
+
+        if (removeIndexes.isEmpty()) {
+            Toast.makeText(
+                this,
+                "삭제할 곡을 먼저 선택해 주세요.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val oldCurrentIndex = currentIndex
+        val currentRemoved = removeIndexes.contains(oldCurrentIndex)
+
+        if (currentRemoved) {
+            releaseCurrentPlayer()
+            currentIndex = -1
+            playButton.text = "▶"
+            timeText.text = "00:00 / 00:00"
+            progressBar.progress = 0
+        }
+
+        for (index in removeIndexes.sortedDescending()) {
+            playlist.removeAt(index)
+            songNames.removeAt(index)
+        }
+
+        if (!currentRemoved && oldCurrentIndex >= 0) {
+            currentIndex =
+                oldCurrentIndex - removeIndexes.count { it < oldCurrentIndex }
+        }
+
+        adapter.notifyDataSetChanged()
+        playlistView.clearChoices()
+
+        Toast.makeText(
+            this,
+            "${removeIndexes.size}개 곡을 삭제했습니다.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun releaseCurrentPlayer() {
+        isPrepared = false
+
+        try {
+            player?.stop()
+        } catch (_: Exception) {
+        }
+
+        try {
+            player?.release()
+        } catch (_: Exception) {
+        }
+
+        player = null
+    }
+
     private fun formatTime(milliseconds: Int): String {
-        val seconds = milliseconds / 1000
+        val totalSeconds = milliseconds.coerceAtLeast(0) / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+
         return String.format(
+            Locale.getDefault(),
             "%02d:%02d",
-            seconds / 60,
-            seconds % 60
+            minutes,
+            seconds
         )
     }
 
-    private fun releasePlayer() {
-        mediaPlayer?.release()
-        mediaPlayer = null
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density).toInt()
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(progressUpdater)
-        releasePlayer()
+        handler.removeCallbacks(updateTask)
+        releaseCurrentPlayer()
         super.onDestroy()
     }
 }
