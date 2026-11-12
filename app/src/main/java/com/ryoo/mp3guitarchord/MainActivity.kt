@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private var candidateChord: String? = null
     private var candidateChordFrames = 0
     private var displayedChord: String? = null
+    private val chordHistory = mutableListOf<String>()
     private lateinit var analyzerView: AudioVisualizerView
     private var audioVisualizer: Visualizer? = null
     private lateinit var playButton: Button
@@ -348,15 +349,15 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
 
-        // 가운데 칸에는 재생 음원에서 실시간으로 추정한 현재 기타 코드를 표시합니다.
+        // 최근 검출된 코드 5개를 왼쪽에서 오른쪽으로 흘러가듯 표시합니다.
         repeat(5) { index ->
             val slot = TextView(this).apply {
                 text = "—"
-                textSize = if (index == 2) chordFontSize * 0.78f else chordFontSize * 0.58f
+                textSize = if (index == 4) chordFontSize * 0.78f else chordFontSize * 0.58f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setTextColor(
-                    if (index == 2) Color.rgb(85, 213, 255)
+                    if (index == 4) Color.rgb(85, 213, 255)
                     else Color.rgb(125, 151, 174)
                 )
                 includeFontPadding = false
@@ -1752,14 +1753,45 @@ class MainActivity : Activity() {
             candidateChord = chord
             candidateChordFrames = 1
         }
+
         // 순간적인 잡음으로 코드가 계속 바뀌지 않도록 같은 코드가 연속 검출될 때만 반영합니다.
         if (candidateChordFrames >= 3 && displayedChord != chord) {
             displayedChord = chord
-            if (chordSlots.size >= 5) {
-                chordSlots.forEachIndexed { index, slot ->
-                    slot.text = if (index == 2) chord else "—"
+
+            // 같은 코드가 연속 검출되면 한 번만 기록하고, 새 코드가 나오면 오른쪽에 추가합니다.
+            if (chordHistory.lastOrNull() != chord) {
+                chordHistory.add(chord)
+                if (chordHistory.size > 5) {
+                    chordHistory.removeAt(0)
                 }
+                renderChordHistory()
             }
+        }
+    }
+
+    private fun renderChordHistory() {
+        if (chordSlots.size < 5) return
+
+        val firstVisibleSlot = 5 - chordHistory.size
+        chordSlots.forEachIndexed { index, slot ->
+            val historyIndex = index - firstVisibleSlot
+            val hasChord = historyIndex in chordHistory.indices
+            slot.text = if (hasChord) chordHistory[historyIndex] else "—"
+
+            val isLatestChord = hasChord && index == 4
+            slot.textSize = if (isLatestChord) {
+                slot.textSize * 1.0f
+            } else {
+                slot.textSize
+            }
+            slot.setTextColor(
+                when {
+                    isLatestChord -> Color.rgb(85, 213, 255)
+                    hasChord -> Color.rgb(180, 199, 216)
+                    else -> Color.rgb(75, 94, 113)
+                }
+            )
+            slot.alpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
         }
     }
 
@@ -1767,7 +1799,14 @@ class MainActivity : Activity() {
         candidateChord = null
         candidateChordFrames = 0
         displayedChord = null
-        if (chordSlots.isNotEmpty()) chordSlots.forEach { it.text = "—" }
+        chordHistory.clear()
+        if (chordSlots.isNotEmpty()) {
+            chordSlots.forEach {
+                it.text = "—"
+                it.alpha = 1.0f
+                it.setTextColor(Color.rgb(125, 151, 174))
+            }
+        }
     }
 
     private fun releaseAudioVisualizer() {
