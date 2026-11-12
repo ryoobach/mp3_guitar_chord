@@ -909,6 +909,22 @@ class MainActivity : Activity() {
         }
         textColumn.addView(developer)
 
+        val versionName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "알 수 없음"
+        } catch (_: Exception) {
+            "알 수 없음"
+        }
+
+        val version = TextView(this).apply {
+            text = "버전 $versionName"
+            textSize = 10f
+            setTextColor(Color.rgb(170, 190, 205))
+            setPadding(0, dp(4), 0, 0)
+            isSingleLine = true
+            includeFontPadding = false
+        }
+        textColumn.addView(version)
+
         content.addView(
             textColumn,
             LinearLayout.LayoutParams(
