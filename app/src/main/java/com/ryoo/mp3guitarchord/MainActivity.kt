@@ -145,10 +145,11 @@ class MainActivity : Activity() {
             else -> 27f
         }
 
+        // 기타 코드 글씨를 기존보다 두 단계 작게 조정합니다.
         val chordFontSize = when {
-            isCompact -> 25f
-            isTablet -> 38f
-            else -> 32f
+            isCompact -> 21f
+            isTablet -> 34f
+            else -> 28f
         }
 
         val root = LinearLayout(this).apply {
@@ -397,7 +398,8 @@ class MainActivity : Activity() {
         volumeRow.addView(volumeLabel)
 
         volumeBar = HorizontalVolumeBarView(this, 80) { value ->
-            val volume = value / 100f            player?.setVolume(volume, volume)
+            val volume = value / 100f
+            player?.setVolume(volume, volume)
             volumeValueText.text = "$value%"
         }
         volumeRow.addView(
@@ -796,7 +798,8 @@ class MainActivity : Activity() {
             cubicTo(83f, 53f, 84f, 45f, 79f, 42f)
             cubicTo(73f, 39f, 66f, 43f, 61f, 48f)
             lineTo(60f, 57f)
-            lineTo(48f, 57f)            close()
+            lineTo(48f, 57f)
+            close()
         }
         paint.color = Color.rgb(205, 48, 48)
         canvas.drawPath(body, paint)
@@ -1185,7 +1188,8 @@ class MainActivity : Activity() {
         val normalizedAddress = if (address.contains("://")) address else "http://$address"
         val uri = try {
             Uri.parse(normalizedAddress)
-        } catch (_: Exception) {            null
+        } catch (_: Exception) {
+            null
         }
 
         if (uri == null ||
@@ -1421,8 +1425,10 @@ class MainActivity : Activity() {
 
                 updateTimeDisplay(0, prepared.duration)
 
-                attachAudioVisualizer(prepared.audioSessionId)
+                // 재생을 시작한 뒤 오디오 세션에 분석기를 연결해야
+                // 일부 기기에서 FFT 데이터가 안정적으로 전달됩니다.
                 prepared.start()
+                attachAudioVisualizer(prepared.audioSessionId)
                 playButton.text = "Ⅱ"
             }
 
@@ -1585,3 +1591,314 @@ class MainActivity : Activity() {
             Toast.makeText(
                 this,
                 "첫 번째 곡입니다.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    // --------------------------------------------------
+    // 플레이리스트 선택 / 삭제
+    // --------------------------------------------------
+
+    private fun toggleSelectionMode() {
+        selectionMode = !selectionMode
+        selectedPlaylistItems.clear()
+
+        selectButton.setTextColor(
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE
+        )
+        selectButton.background = roundedBackground(
+            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
+        )
+
+        adapter.notifyDataSetChanged()
+
+        Toast.makeText(
+            this,
+            if (selectionMode) "삭제할 곡을 선택해 주세요." else "선택 모드를 종료했습니다.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun removeSelected() {
+
+        if (!selectionMode) {
+            Toast.makeText(
+                this,
+                "먼저 SEL 버튼을 눌러 선택 모드로 전환해 주세요.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val removeIndexes = selectedPlaylistItems
+            .filter { it in playlist.indices }
+            .sortedDescending()
+
+        if (removeIndexes.isEmpty()) {
+            Toast.makeText(
+                this,
+                "삭제할 곡을 선택해 주세요.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val oldIndex = currentIndex
+        val currentRemoved = removeIndexes.contains(oldIndex)
+
+        if (currentRemoved) {
+            releaseCurrentPlayer()
+            currentIndex = -1
+
+            playButton.text = "▶"
+            resetTimeDisplay()
+            progressBar.reset()
+            resetChordDisplay()
+            setScrollingSongTitle("")
+        }
+
+        for (index in removeIndexes) {
+            playlist.removeAt(index)
+            songNames.removeAt(index)
+        }
+
+        if (!currentRemoved && oldIndex >= 0) {
+            currentIndex = oldIndex - removeIndexes.count { it < oldIndex }
+
+            if (currentIndex in songNames.indices) {
+                setScrollingSongTitle(songNames[currentIndex])
+            }
+        }
+
+        selectedPlaylistItems.clear()
+        selectionMode = false
+        selectButton.setTextColor(Color.WHITE)
+        selectButton.background = roundedBackground(
+            Color.rgb(35, 65, 88),
+            Color.rgb(64, 103, 130)
+        )
+        adapter.notifyDataSetChanged()
+
+        Toast.makeText(
+            this,
+            "${removeIndexes.size}개 항목을 삭제했습니다.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun attachAudioVisualizer(audioSessionId: Int) {
+        releaseAudioVisualizer()
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 210)
+            }
+            return
+        }
+
+        try {
+            val visualizer = Visualizer(audioSessionId)
+            visualizer.captureSize = Visualizer.getCaptureSizeRange()[1]
+            visualizer.setDataCaptureListener(
+                object : Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(
+                        visualizer: Visualizer?,
+                        waveform: ByteArray?,
+                        samplingRate: Int
+                    ) = Unit
+
+                    override fun onFftDataCapture(
+                        visualizer: Visualizer?,
+                        fft: ByteArray?,
+                        samplingRate: Int
+                    ) {
+                        if (fft == null || fft.size < 8) return
+                        val bars = FloatArray(48)
+                        val usableBins = fft.size / 2
+                        for (bar in bars.indices) {
+                            val start = (1 + bar * bar / bars.size * (usableBins - 1) / bars.size)
+                                .coerceIn(1, usableBins - 1)
+                            val end = (start + (bar / 3) + 1).coerceAtMost(usableBins)
+                            var peak = 0.0
+                            for (bin in start until end) {
+                                val real = fft[2 * bin].toDouble()
+                                val imaginary = fft[2 * bin + 1].toDouble()
+                                peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
+                            }
+                            bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
+                        }
+                        val detectedChord = ChordDetector.detect(fft, samplingRate)
+                        val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
+                        val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
+                        runOnUiThread {
+                            analyzerView.setSpectrum(bars)
+                            if (trackDuration > 0) {
+                                progressBar.recordSpectrum(playbackPosition, trackDuration, bars)
+                            } else {
+                                // 인터넷 방송은 전체 길이가 없으므로 최근 분석 기록을 왼쪽부터 누적합니다.
+                                progressBar.recordLiveSpectrum(bars)
+                            }
+                            if (detectedChord != null) updateDetectedChord(detectedChord)
+                        }
+                    }
+                },
+                (Visualizer.getMaxCaptureRate() / 2).coerceAtLeast(1000),
+                false,
+                true
+            )
+            visualizer.enabled = true
+            audioVisualizer = visualizer
+        } catch (_: Exception) {
+            analyzerView.setSpectrum(FloatArray(48))
+            Toast.makeText(
+                this,
+                "오디오 분석을 시작하지 못했습니다. 앱의 오디오 권한을 확인해 주세요.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun updateDetectedChord(chord: String) {
+        if (candidateChord == chord) {
+            candidateChordFrames++
+        } else {
+            candidateChord = chord
+            candidateChordFrames = 1
+        }
+
+        // 순간적인 잡음으로 코드가 계속 바뀌지 않도록 같은 코드가 연속 검출될 때만 반영합니다.
+        if (candidateChordFrames >= 3 && displayedChord != chord) {
+            displayedChord = chord
+
+            // 같은 코드가 연속 검출되면 한 번만 기록하고, 새 코드가 나오면 오른쪽에 추가합니다.
+            if (chordHistory.lastOrNull() != chord) {
+                chordHistory.add(chord)
+                if (chordHistory.size > 5) {
+                    chordHistory.removeAt(0)
+                }
+                renderChordHistory()
+            }
+        }
+    }
+
+    private fun renderChordHistory() {
+        if (chordSlots.size < 5) return
+
+        val firstVisibleSlot = 5 - chordHistory.size
+        chordSlots.forEachIndexed { index, slot ->
+            val historyIndex = index - firstVisibleSlot
+            val hasChord = historyIndex in chordHistory.indices
+            slot.text = if (hasChord) chordHistory[historyIndex] else "—"
+
+            val isLatestChord = hasChord && index == 4
+            slot.textSize = if (isLatestChord) {
+                slot.textSize * 1.0f
+            } else {
+                slot.textSize
+            }
+            slot.setTextColor(
+                when {
+                    isLatestChord -> Color.rgb(85, 213, 255)
+                    hasChord -> Color.rgb(180, 199, 216)
+                    else -> Color.rgb(75, 94, 113)
+                }
+            )
+            slot.alpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
+        }
+    }
+
+    private fun resetChordDisplay() {
+        candidateChord = null
+        candidateChordFrames = 0
+        displayedChord = null
+        chordHistory.clear()
+        if (chordSlots.isNotEmpty()) {
+            chordSlots.forEach {
+                it.text = "—"
+                it.alpha = 1.0f
+                it.setTextColor(Color.rgb(125, 151, 174))
+            }
+        }
+    }
+
+    private fun releaseAudioVisualizer() {
+        try {
+            audioVisualizer?.enabled = false
+            audioVisualizer?.release()
+        } catch (_: Exception) {
+        }
+        audioVisualizer = null
+        if (::analyzerView.isInitialized) {
+            analyzerView.setSpectrum(FloatArray(48))
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 210) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
+                player?.let { if (isPrepared) attachAudioVisualizer(it.audioSessionId) }
+            } else {
+                Toast.makeText(
+                    this,
+                    "기타 코드 분석을 위해 오디오 권한을 허용해 주세요.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    // --------------------------------------------------
+    // 플레이어 정리 / 시간 표시
+    // --------------------------------------------------
+
+    private fun releaseCurrentPlayer() {
+
+        releaseAudioVisualizer()
+        isPrepared = false
+
+        try {
+            player?.stop()
+        } catch (_: Exception) {
+        }
+
+        try {
+            player?.release()
+        } catch (_: Exception) {
+        }
+
+        player = null
+    }
+
+    private fun formatTime(milliseconds: Int): String {
+
+        val seconds =
+            milliseconds.coerceAtLeast(0) / 1000
+
+        return String.format(
+            Locale.getDefault(),
+            "%02d:%02d",
+            seconds / 60,
+            seconds % 60
+        )
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    override fun onDestroy() {
+
+        handler.removeCallbacks(updateTask)
+        releaseCurrentPlayer()
+
+        super.onDestroy()
+    }
+}
