@@ -243,10 +243,10 @@ class MainActivity : Activity() {
         // 왼쪽 시간 표시
 
         val timeArea = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(Color.rgb(23, 40, 58))
-            setPadding(dp(2), dp(3), dp(2), dp(3))
+            setPadding(dp(3), dp(4), dp(3), dp(4))
         }
 
         elapsedTimeText = TextView(this).apply {
@@ -260,8 +260,8 @@ class MainActivity : Activity() {
         }
 
         totalTimeText = TextView(this).apply {
-            text = "/ 00:00"
-            textSize = if (isCompact) 13f else 16f
+            text = "총 00:00"
+            textSize = if (isCompact) 12f else 15f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(180, 195, 210))
@@ -269,14 +269,37 @@ class MainActivity : Activity() {
             includeFontPadding = false
         }
 
+        // 첫째 줄: 현재 재생 시간
         timeArea.addView(
             elapsedTimeText,
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1.05f
+            )
         )
 
+        // 둘째 줄: 전체 재생 시간
         timeArea.addView(
             totalTimeText,
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                0.8f
+            )
+        )
+
+        // 전체 시간 바로 아래에 작게 표시하는 실시간 오디오 스펙트럼
+        analyzerView = AudioVisualizerView(this)
+        timeArea.addView(
+            analyzerView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1.15f
+            ).apply {
+                setMargins(dp(4), dp(2), dp(4), 0)
+            }
         )
 
         upperArea.addView(
@@ -407,15 +430,7 @@ class MainActivity : Activity() {
 
         playerPanel.addView(upperArea)
 
-        // 재생 중인 오디오의 주파수 대역을 실시간으로 표시합니다.
-        analyzerView = AudioVisualizerView(this)
-        playerPanel.addView(
-            analyzerView,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(if (isCompact) 48 else 60)
-            )
-        )
+        // 실시간 스펙트럼은 왼쪽 시간 표시 영역의 전체 재생 시간 아래에 작게 표시합니다.
 
         // 진행 바
 
