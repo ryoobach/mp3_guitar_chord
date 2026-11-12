@@ -1002,6 +1002,18 @@ class MainActivity : Activity() {
             }
     }
 
+    private fun setScrollingSongTitle(title: String) {
+        if (!::songTitle.isInitialized) return
+        val cleanTitle = title.trim()
+        songTitle.text = if (cleanTitle.isEmpty()) {
+            "곡을 선택해 주세요"
+        } else {
+            // 짧은 제목도 반드시 흐르도록 제목을 반복해 충분한 길이를 확보합니다.
+            "$cleanTitle     •     $cleanTitle     •     "
+        }
+        songTitle.isSelected = true
+    }
+
     private fun resetTimeDisplay() {
         elapsedTimeText.text = "00:00"
         totalTimeText.text = "/ 00:00"
@@ -1176,7 +1188,7 @@ class MainActivity : Activity() {
 
         if (currentIndex == -1) {
             currentIndex = 0
-            songTitle.text = songNames[0]
+            setScrollingSongTitle(songNames[0])
             playlistView.setItemChecked(0, true)
         }
 
@@ -1273,7 +1285,7 @@ class MainActivity : Activity() {
 
             if (currentIndex == -1 && playlist.isNotEmpty()) {
                 currentIndex = 0
-                songTitle.text = songNames[0]
+                setScrollingSongTitle(songNames[0])
                 playlistView.setItemChecked(0, true)
             }
 
@@ -1332,7 +1344,7 @@ class MainActivity : Activity() {
         releaseCurrentPlayer()
 
         currentIndex = index
-        songTitle.text = songNames[index]
+        setScrollingSongTitle(songNames[index])
 
         playlistView.setItemChecked(index, true)
 
@@ -1610,7 +1622,7 @@ class MainActivity : Activity() {
             playButton.text = "▶"
             resetTimeDisplay()
             progressBar.progress = 0
-            songTitle.text = "곡을 선택해 주세요"
+            setScrollingSongTitle("")
         }
 
         for (index in removeIndexes.sortedDescending()) {
@@ -1624,7 +1636,7 @@ class MainActivity : Activity() {
                 oldIndex - removeIndexes.count { it < oldIndex }
 
             if (currentIndex in songNames.indices) {
-                songTitle.text = songNames[currentIndex]
+                setScrollingSongTitle(songNames[currentIndex])
             }
         }
 
