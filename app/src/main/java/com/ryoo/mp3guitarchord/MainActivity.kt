@@ -59,7 +59,6 @@ class MainActivity : Activity() {
                             progressBar.max = duration
                             progressBar.progress = position
                         }
-
                         updateTimeDisplay(position, duration)
                     }
                 } catch (_: Exception) {
@@ -79,18 +78,46 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 전체 화면 구성
+    // 화면 구성 - 휴대폰 / 태블릿 자동 대응
     // --------------------------------------------------
 
     private fun createScreen() {
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-            setBackgroundColor(Color.rgb(8, 15, 27))
+        val widthDp = resources.configuration.screenWidthDp
+        val heightDp = resources.configuration.screenHeightDp
+
+        val isTablet = widthDp >= 600
+        val isCompact = heightDp < 650 || widthDp < 360
+
+        val panelHeight = when {
+            isCompact -> 108
+            isTablet -> 158
+            else -> 132
         }
 
-        // 상단: 실제 앱 아이콘 + 앱 이름 + 홈 / 개발자 정보 / 닫기
+        val timeFontSize = when {
+            isCompact -> 22f
+            isTablet -> 31f
+            else -> 27f
+        }
+
+        val chordFontSize = when {
+            isCompact -> 25f
+            isTablet -> 38f
+            else -> 32f
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setBackgroundColor(Color.rgb(8, 15, 27))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // 상단 앱 이름과 메뉴
 
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -101,13 +128,13 @@ class MainActivity : Activity() {
         topBar.addView(
             createAppIcon(dp(32)),
             LinearLayout.LayoutParams(dp(32), dp(32)).apply {
-                setMargins(0, 0, dp(7), 0)
+                setMargins(0, 0, dp(6), 0)
             }
         )
 
         val topTitle = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = 13f
+            textSize = if (isCompact) 11f else 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
@@ -120,7 +147,7 @@ class MainActivity : Activity() {
         )
 
         val homeButton = makeButton("⌂").apply {
-            textSize = 21f
+            textSize = 20f
             contentDescription = "홈 화면으로 이동"
             setOnClickListener {
                 moveTaskToBack(true)
@@ -128,7 +155,7 @@ class MainActivity : Activity() {
         }
 
         val developerButton = makeButton("ⓘ").apply {
-            textSize = 19f
+            textSize = 18f
             contentDescription = "개발자 정보"
             setOnClickListener {
                 showDeveloperInfo()
@@ -136,7 +163,7 @@ class MainActivity : Activity() {
         }
 
         val exitButton = makeButton("×").apply {
-            textSize = 24f
+            textSize = 23f
             contentDescription = "앱 종료"
             setOnClickListener {
                 releaseCurrentPlayer()
@@ -144,21 +171,21 @@ class MainActivity : Activity() {
             }
         }
 
-        topBar.addView(homeButton, topButtonParams())
-        topBar.addView(developerButton, topButtonParams())
-        topBar.addView(exitButton, topButtonParams())
+        topBar.addView(homeButton, topButtonParams(isCompact))
+        topBar.addView(developerButton, topButtonParams(isCompact))
+        topBar.addView(exitButton, topButtonParams(isCompact))
 
         root.addView(
             topBar,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(42)
+                dp(if (isCompact) 38 else 42)
             )
         )
 
         addDivider(root)
 
-        // 메인 재생 화면
+        // 재생 화면
 
         val playerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -172,18 +199,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        // 왼쪽 시간 표시: 현재 시간 / 전체 시간 두 줄
+        // 왼쪽 시간 표시
 
         val timeArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(Color.rgb(23, 40, 58))
-            setPadding(dp(3), dp(5), dp(3), dp(5))
+            setPadding(dp(2), dp(3), dp(2), dp(3))
         }
 
         elapsedTimeText = TextView(this).apply {
             text = "00:00"
-            textSize = 27f
+            textSize = timeFontSize
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(245, 214, 107))
@@ -193,7 +220,7 @@ class MainActivity : Activity() {
 
         totalTimeText = TextView(this).apply {
             text = "/ 00:00"
-            textSize = 16f
+            textSize = if (isCompact) 13f else 16f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(180, 195, 210))
@@ -205,7 +232,8 @@ class MainActivity : Activity() {
             elapsedTimeText,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(43)
+                0,
+                1f
             )
         )
 
@@ -213,27 +241,28 @@ class MainActivity : Activity() {
             totalTimeText,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(28)
+                0,
+                0.7f
             )
         )
 
         upperArea.addView(
             timeArea,
-            LinearLayout.LayoutParams(0, dp(145), 1f)
+            LinearLayout.LayoutParams(0, dp(panelHeight), 1f)
         )
 
-        // 오른쪽 노래 제목 + 기타 코드 + 볼륨
+        // 오른쪽 곡 제목 / 코드 / 볼륨
 
         val chordArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(Color.rgb(16, 31, 50))
-            setPadding(dp(7), dp(5), dp(7), dp(5))
+            setPadding(dp(5), dp(3), dp(5), dp(3))
         }
 
         songTitle = TextView(this).apply {
             text = "곡을 선택해 주세요"
-            textSize = 15f
+            textSize = if (isCompact) 12f else 15f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(245, 214, 107))
@@ -246,13 +275,13 @@ class MainActivity : Activity() {
             songTitle,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(27)
+                dp(if (isCompact) 22 else 27)
             )
         )
 
         chordText = TextView(this).apply {
             text = "Gm7"
-            textSize = 32f
+            textSize = chordFontSize
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(85, 213, 255))
@@ -267,7 +296,7 @@ class MainActivity : Activity() {
             )
         )
 
-        // 볼륨 조절
+        // 볼륨
 
         val volumeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -276,10 +305,10 @@ class MainActivity : Activity() {
 
         val volumeLabel = TextView(this).apply {
             text = "볼륨"
-            textSize = 12f
+            textSize = if (isCompact) 10f else 12f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(245, 214, 107))
-            setPadding(0, 0, dp(5), 0)
+            setPadding(0, 0, dp(4), 0)
         }
 
         volumeRow.addView(volumeLabel)
@@ -314,25 +343,25 @@ class MainActivity : Activity() {
 
         volumeRow.addView(
             volumeBar,
-            LinearLayout.LayoutParams(0, dp(35), 1f)
+            LinearLayout.LayoutParams(0, dp(32), 1f)
         )
 
         chordArea.addView(
             volumeRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(38)
+                dp(if (isCompact) 30 else 36)
             )
         )
 
         upperArea.addView(
             chordArea,
-            LinearLayout.LayoutParams(0, dp(145), 2f)
+            LinearLayout.LayoutParams(0, dp(panelHeight), 2f)
         )
 
         playerPanel.addView(upperArea)
 
-        // 곡 진행 바
+        // 진행 바
 
         progressBar = SeekBar(this).apply {
             max = 100
@@ -369,7 +398,6 @@ class MainActivity : Activity() {
                         ) {
                             player?.seekTo(seekBar?.progress ?: 0)
                         }
-
                         isSeeking = false
                     }
                 }
@@ -380,16 +408,16 @@ class MainActivity : Activity() {
             progressBar,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(38)
+                dp(if (isCompact) 31 else 36)
             )
         )
 
-        // 재생 관련 버튼
+        // 재생 버튼
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(3), dp(3), dp(3), dp(3))
+            setPadding(dp(3), dp(2), dp(3), dp(2))
         }
 
         shuffleButton = makeButton("SHF")
@@ -425,17 +453,21 @@ class MainActivity : Activity() {
             updateModeButtons()
         }
 
-        controls.addView(shuffleButton, controlParams())
-        controls.addView(previous, controlParams())
+        val controlHeight = if (isCompact) 39 else 44
+
+        controls.addView(shuffleButton, controlParams(controlHeight))
+        controls.addView(previous, controlParams(controlHeight))
 
         controls.addView(
             playButton,
-            LinearLayout.LayoutParams(0, dp(44), 1.2f)
+            LinearLayout.LayoutParams(0, dp(controlHeight), 1.2f).apply {
+                setMargins(dp(2), 0, dp(2), 0)
+            }
         )
 
-        controls.addView(stop, controlParams())
-        controls.addView(next, controlParams())
-        controls.addView(repeatButton, controlParams())
+        controls.addView(stop, controlParams(controlHeight))
+        controls.addView(next, controlParams(controlHeight))
+        controls.addView(repeatButton, controlParams(controlHeight))
 
         playerPanel.addView(controls)
 
@@ -447,35 +479,38 @@ class MainActivity : Activity() {
             )
         )
 
-        // 플레이리스트 제목
+        // 플레이리스트 영역
+        // 제목과 목록을 하나의 가변 영역으로 묶습니다.
+
+        val playlistSection = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.TRANSPARENT)
+        }
 
         val playlistTitle = TextView(this).apply {
             text = "PLAY LIST"
-            textSize = 15f
+            textSize = if (isCompact) 13f else 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(245, 214, 107))
-            setPadding(dp(4), dp(6), 0, dp(4))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(3), 0, dp(3))
         }
 
-        root.addView(
+        playlistSection.addView(
             playlistTitle,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(32)
+                dp(if (isCompact) 27 else 31)
             )
         )
-
-        // 플레이리스트
 
         playlistView = ListView(this).apply {
             choiceMode = ListView.CHOICE_MODE_MULTIPLE
             setBackgroundColor(Color.rgb(16, 31, 50))
             setCacheColorHint(Color.TRANSPARENT)
-
             divider = android.graphics.drawable.ColorDrawable(
                 Color.rgb(52, 75, 97)
             )
-
             dividerHeight = dp(1)
 
             setOnItemClickListener { _, _, position, _ ->
@@ -491,10 +526,7 @@ class MainActivity : Activity() {
 
         playlistView.adapter = adapter
 
-        // 남은 화면 공간만 플레이리스트에 할당
-        // 하단 버튼은 별도 고정 영역으로 유지
-
-        root.addView(
+        playlistSection.addView(
             playlistView,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -503,12 +535,25 @@ class MainActivity : Activity() {
             )
         )
 
-        // 하단: 왼쪽 ADD / REM / SEL, 오른쪽 기타 아이콘 + 앱 이름
+        // 중요: 플레이리스트 영역만 남은 공간을 사용합니다.
+        // 하단 버튼은 이 영역 바깥에 별도로 배치합니다.
+
+        root.addView(
+            playlistSection,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        // 하단 버튼 영역 - 항상 고정
 
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(3), 0, 0)
+            setPadding(0, dp(2), 0, 0)
+            setBackgroundColor(Color.rgb(8, 15, 27))
         }
 
         val add = makeButton("ADD")
@@ -527,13 +572,29 @@ class MainActivity : Activity() {
             showSelectionMenu()
         }
 
-        bottomRow.addView(add, bottomButtonParams())
-        bottomRow.addView(remove, bottomButtonParams())
-        bottomRow.addView(select, bottomButtonParams())
+        val bottomButtonWidth = when {
+            widthDp < 360 -> 39
+            isTablet -> 52
+            else -> 44
+        }
 
-        // 오른쪽 브랜딩은 한 줄로 표시
         bottomRow.addView(
-            createBottomBrand(),
+            add,
+            bottomButtonParams(bottomButtonWidth)
+        )
+
+        bottomRow.addView(
+            remove,
+            bottomButtonParams(bottomButtonWidth)
+        )
+
+        bottomRow.addView(
+            select,
+            bottomButtonParams(bottomButtonWidth)
+        )
+
+        bottomRow.addView(
+            createBottomBrand(isCompact),
             LinearLayout.LayoutParams(0, dp(42), 1f)
         )
 
@@ -541,7 +602,7 @@ class MainActivity : Activity() {
             bottomRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(47)
+                dp(46)
             )
         )
 
@@ -549,7 +610,7 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 실제 앱 아이콘 불러오기
+    // 실제 앱 아이콘
     // --------------------------------------------------
 
     private fun createAppIcon(size: Int): ImageView {
@@ -558,7 +619,9 @@ class MainActivity : Activity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
 
             try {
-                setImageDrawable(packageManager.getApplicationIcon(packageName))
+                setImageDrawable(
+                    packageManager.getApplicationIcon(packageName)
+                )
             } catch (_: Exception) {
                 setImageDrawable(
                     roundedBackground(
@@ -573,7 +636,7 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 개발자 정보 창
+    // 개발자 정보
     // --------------------------------------------------
 
     private fun showDeveloperInfo() {
@@ -600,13 +663,7 @@ class MainActivity : Activity() {
             setTextColor(Color.rgb(85, 213, 255))
         }
 
-        content.addView(
-            title,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
+        content.addView(title)
 
         val developer = TextView(this).apply {
             text = "Ryoo Jaesang & 최피디"
@@ -627,32 +684,35 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 하단 브랜딩: 기타 아이콘 + 앱 이름 한 줄
+    // 하단 브랜딩
     // --------------------------------------------------
 
-    private fun createBottomBrand(): LinearLayout {
+    private fun createBottomBrand(isCompact: Boolean): LinearLayout {
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(3), 0, 0, 0)
+            setPadding(dp(2), 0, 0, 0)
         }
 
         val guitarIcon = TextView(this).apply {
             text = "🎸"
-            textSize = 21f
+            textSize = if (isCompact) 17f else 21f
             gravity = Gravity.CENTER
             includeFontPadding = false
         }
 
         row.addView(
             guitarIcon,
-            LinearLayout.LayoutParams(dp(30), dp(36))
+            LinearLayout.LayoutParams(
+                dp(if (isCompact) 25 else 30),
+                dp(36)
+            )
         )
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = 10f
+            textSize = if (isCompact) 8f else 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
@@ -709,8 +769,8 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(1)
             ).apply {
-                topMargin = dp(3)
-                bottomMargin = dp(3)
+                topMargin = dp(2)
+                bottomMargin = dp(2)
             }
         )
     }
@@ -748,22 +808,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun topButtonParams(): LinearLayout.LayoutParams {
-        return LinearLayout.LayoutParams(dp(38), dp(36)).apply {
+    private fun topButtonParams(isCompact: Boolean): LinearLayout.LayoutParams {
+        val size = if (isCompact) 34 else 38
+
+        return LinearLayout.LayoutParams(dp(size), dp(size - 2)).apply {
             setMargins(dp(2), 0, dp(2), 0)
         }
     }
 
-    private fun controlParams(): LinearLayout.LayoutParams {
+    private fun controlParams(height: Int): LinearLayout.LayoutParams {
 
-        return LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+        return LinearLayout.LayoutParams(0, dp(height), 1f).apply {
             setMargins(dp(2), 0, dp(2), 0)
         }
     }
 
-    private fun bottomButtonParams(): LinearLayout.LayoutParams {
+    private fun bottomButtonParams(width: Int): LinearLayout.LayoutParams {
 
-        return LinearLayout.LayoutParams(dp(43), dp(34)).apply {
+        return LinearLayout.LayoutParams(dp(width), dp(34)).apply {
             setMargins(dp(2), 0, dp(2), 0)
         }
     }
@@ -798,7 +860,6 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             hint = "https://example.com/radio.mp3"
             setSingleLine(true)
-
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_URI
@@ -872,7 +933,7 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 셔플 / 반복 표시
+    // 셔플 / 반복
     // --------------------------------------------------
 
     private fun updateModeButtons() {
@@ -1133,8 +1194,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // 정지 버튼
-
     private fun stopPlayback() {
 
         val mp = player
@@ -1148,9 +1207,7 @@ class MainActivity : Activity() {
 
                 mp.seekTo(0)
                 progressBar.progress = 0
-
                 updateTimeDisplay(0, mp.duration)
-
                 playButton.text = "▶"
 
             } catch (_: Exception) {
