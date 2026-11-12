@@ -794,7 +794,8 @@ class MainActivity : Activity() {
             lineTo(49f, 2f)
             lineTo(67f, 5f)
             lineTo(65f, 12f)
-            lineTo(59f, 15f)            close()
+            lineTo(59f, 15f)
+            close()
         }
         paint.color = Color.rgb(218, 184, 133)
         canvas.drawPath(head, paint)
@@ -993,7 +994,8 @@ class MainActivity : Activity() {
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = if (isCompact) 8f else 10f            typeface = Typeface.DEFAULT_BOLD
+            textSize = if (isCompact) 8f else 10f
+            typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -1192,7 +1194,8 @@ class MainActivity : Activity() {
             val saved = getSharedPreferences("player_settings", MODE_PRIVATE)
                 .getString("last_stream_url", "http://live09.inlive.co.kr:11640")
             setText(saved)
-            setSelection(text.length)            hint = "http://live09.inlive.co.kr:11640"
+            setSelection(text.length)
+            hint = "http://live09.inlive.co.kr:11640"
             setSingleLine(true)
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
@@ -1789,7 +1792,8 @@ class MainActivity : Activity() {
                             val end = (start + (bar / 3) + 1).coerceAtMost(usableBins)
                             var peak = 0.0
                             for (bin in start until end) {
-                                val real = fft[2 * bin].toDouble()                                val imaginary = fft[2 * bin + 1].toDouble()
+                                val real = fft[2 * bin].toDouble()
+                                val imaginary = fft[2 * bin + 1].toDouble()
                                 peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
                             }
                             bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
@@ -1988,7 +1992,8 @@ private class IcyMetadataReader(
     private var worker: Thread? = null
 
     fun start() {
-        if (running) return        running = true
+        if (running) return
+        running = true
         worker = Thread({
             var localConnection: HttpURLConnection? = null
             try {
