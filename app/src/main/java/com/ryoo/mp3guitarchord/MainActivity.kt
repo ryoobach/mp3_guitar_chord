@@ -74,9 +74,33 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        configureSystemBars()
         createScreen()
         updateModeButtons()
         handler.post(updateTask)
+    }
+
+    // 상태 표시줄과 내비게이션 바의 아이콘을 어두운 앱 배경에 맞춰
+    // 항상 밝게 표시합니다. Android 15의 투명 시스템 바에서도 적용됩니다.
+    private fun configureSystemBars() {
+        val appBackground = Color.rgb(8, 15, 27)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.statusBarColor = appBackground
+            window.navigationBarColor = appBackground
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            window.decorView.systemUiVisibility =
+                window.decorView.systemUiVisibility and
+                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            window.decorView.systemUiVisibility =
+                window.decorView.systemUiVisibility and
+                    View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        }
     }
 
     // --------------------------------------------------
