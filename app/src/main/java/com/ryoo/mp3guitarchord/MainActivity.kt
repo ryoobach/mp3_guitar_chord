@@ -1262,13 +1262,13 @@ class MainActivity : Activity() {
         getSharedPreferences("player_settings", MODE_PRIVATE).edit()
             .putString("last_stream_url", uri.toString()).apply()
         playlist.add(uri)
-        songNames.add("RADIO | ${uri.host ?: "인터넷 방송"}")
+        songNames.add(uri.toString())
 
         adapter.notifyDataSetChanged()
 
         if (currentIndex == -1) {
             currentIndex = 0
-            setScrollingSongTitle(songNames[0])
+            setScrollingSongTitle("인터넷 방송")
             adapter.notifyDataSetChanged()
         }
 
@@ -1423,7 +1423,13 @@ class MainActivity : Activity() {
         releaseCurrentPlayer()
 
         currentIndex = index
-        setScrollingSongTitle(songNames[index])
+
+        val selectedUri = playlist[index]
+        val selectedIsStream =
+            selectedUri.scheme == "http" || selectedUri.scheme == "https"
+        setScrollingSongTitle(
+            if (selectedIsStream) "인터넷 방송" else songNames[index]
+        )
 
         playButton.text = "…"
         resetTimeDisplay()
@@ -1431,10 +1437,8 @@ class MainActivity : Activity() {
         resetChordDisplay()
 
         try {
-            val uri = playlist[index]
-
-            val isStream =
-                uri.scheme == "http" || uri.scheme == "https"
+            val uri = selectedUri
+            val isStream = selectedIsStream
 
             val mp = MediaPlayer()
             player = mp
@@ -1757,9 +1761,9 @@ class MainActivity : Activity() {
         val reader = IcyMetadataReader(streamUrl) { title ->
             runOnUiThread {
                 if (player !== expectedPlayer || currentIndex !in songNames.indices) return@runOnUiThread
+                // 방송 곡 정보는 상단 제목에만 표시합니다.
+                // 플레이리스트에는 사용자가 입력한 방송 URL을 그대로 보존합니다.
                 setScrollingSongTitle(title)
-                songNames[currentIndex] = title
-                adapter.notifyDataSetChanged()
             }
         }
         icyMetadataReader = reader
@@ -2030,7 +2034,7 @@ private class IcyMetadataReader(
                         if (metadataLength <= 0) continue
                         val metadata = ByteArray(metadataLength)
                         if (!readFully(input, metadata, metadataLength)) break
-                        val raw = metadata.toString(Charsets.UTF_8)
+                        val raw = decodeMetadata(metadata)
                             .trim('\u0000', ' ', '\r', '\n', '\t')
                         if (raw.isEmpty()) continue
                         val match = Regex("(?i)StreamTitle\\s*=\\s*['\\\"]([^'\\\"]*)['\\\"]")
@@ -2050,6 +2054,51 @@ private class IcyMetadataReader(
             isDaemon = true
             start()
         }
+    }
+
+    /**
+     * Radio stations do not all use the same character encoding for ICY metadata.
+     * Prefer strict UTF-8, then try Korean legacy encodings for CP949/EUC-KR stations.
+     */
+    private fun decodeMetadata(bytes: ByteArray): String {
+        val charsets = listOf(
+            Charsets.UTF_8,
+            java.nio.charset.Charset.forName("EUC-KR"),
+            java.nio.charset.Charset.forName("x-windows-949")
+        )
+
+        var bestText = ""
+        var bestScore = Int.MIN_VALUE
+
+        for (charset in charsets) {
+            try {
+                val decoder = charset.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                val candidate = decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+                    .trim('\u0000', ' ', '\r', '\n', '\t')
+
+                val hangulCount = candidate.count {
+                    it in '\uAC00'..'\uD7A3' ||
+                        it in '\u1100'..'\u11FF' ||
+                        it in '\u3130'..'\u318F'
+                }
+                val replacementCount = candidate.count { it == '\uFFFD' }
+                val controlCount = candidate.count {
+                    it.isISOControl() && it != '\r' && it != '\n' && it != '\t'
+                }
+                val score = hangulCount * 5 - replacementCount * 20 - controlCount * 3
+
+                if (score > bestScore) {
+                    bestScore = score
+                    bestText = candidate
+                }
+            } catch (_: Exception) {
+                // Try the next supported encoding.
+            }
+        }
+
+        return bestText
     }
 
     private fun readFully(input: java.io.InputStream, buffer: ByteArray, count: Int): Boolean {
