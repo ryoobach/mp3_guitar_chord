@@ -49,9 +49,9 @@ class MainActivity : Activity() {
     private lateinit var totalTimeText: TextView
     private lateinit var songTitle: TextView
     private val chordSlots = mutableListOf<TextView>()
-    private lateinit var currentChordText: TextView
     private var candidateChord: String? = null
     private var candidateChordFrames = 0
+    private var candidateChordSinceMs = 0L
     private var displayedChord: String? = null
     private val chordHistory = mutableListOf<String>()
     private lateinit var analyzerView: AudioVisualizerView
@@ -153,9 +153,9 @@ class MainActivity : Activity() {
 
         // 기타 코드 글씨를 기존보다 두 단계 키웁니다.
         val chordFontSize = when {
-            isCompact -> 11f
-            isTablet -> 14f
-            else -> 12f
+            isCompact -> 15f
+            isTablet -> 20f
+            else -> 17f
         }
 
         val root = LinearLayout(this).apply {
@@ -355,61 +355,43 @@ class MainActivity : Activity() {
             )
         )
 
-        // 첫째 줄: 현재 검출된 기타 코드를 크게 강조합니다.
-        currentChordText = TextView(this).apply {
-            text = "—"
-            textSize = when {
-                isCompact -> 18f
-                isTablet -> 26f
-                else -> 22f
-            }
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(85, 213, 255))
-            includeFontPadding = false
-            maxLines = 1
-        }
-        chordArea.addView(
-            currentChordText,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1.25f
-            )
-        )
-
-        // 둘째 줄: 실제로 검출된 최근 코드 흐름을 보여줍니다.
-        // 아직 재생되지 않은 미래 코드를 추측해서 표시하지는 않습니다.
-        val chordRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-
-        repeat(5) { index ->
-            val slot = TextView(this).apply {
-                text = ""
-                textSize = chordFontSize
-                typeface = Typeface.DEFAULT_BOLD
+        // 두 줄에 같은 크기의 코드 진행을 표시합니다.
+        // 새 코드가 검출되면 진행 끝에 추가되고, 현재 코드는 하이라이트됩니다.
+        repeat(2) { rowIndex ->
+            val chordRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(125, 151, 174))
-                includeFontPadding = false
-                maxLines = 1
             }
-            chordSlots.add(slot)
-            chordRow.addView(
-                slot,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+
+            repeat(5) {
+                val slot = TextView(this).apply {
+                    text = ""
+                    textSize = chordFontSize
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.rgb(180, 199, 216))
+                    includeFontPadding = false
+                    maxLines = 1
+                    setPadding(dp(1), 0, dp(1), 0)
+                }
+                chordSlots.add(slot)
+                chordRow.addView(
+                    slot,
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                )
+            }
+
+            chordArea.addView(
+                chordRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                ).apply {
+                    if (rowIndex > 0) setMargins(0, dp(1), 0, 0)
+                }
             )
         }
-
-        chordArea.addView(
-            chordRow,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
 
         // 볼륨
 
@@ -1872,21 +1854,26 @@ class MainActivity : Activity() {
     }
 
     private fun updateDetectedChord(chord: String) {
+        val now = System.currentTimeMillis()
+
         if (candidateChord == chord) {
             candidateChordFrames++
         } else {
             candidateChord = chord
             candidateChordFrames = 1
+            candidateChordSinceMs = now
         }
 
-        // 순간적인 잡음으로 코드가 계속 바뀌지 않도록 같은 코드가 연속 검출될 때만 반영합니다.
-        if (candidateChordFrames >= 2 && displayedChord != chord) {
+        // FFT 한두 프레임의 순간적인 오검출은 무시합니다.
+        // 연속 프레임과 최소 유지 시간을 모두 만족해야 코드 진행에 반영합니다.
+        val stableForMs = now - candidateChordSinceMs
+        if (candidateChordFrames >= 4 && stableForMs >= 250L && displayedChord != chord) {
             displayedChord = chord
 
-            // 같은 코드가 연속 검출되면 한 번만 기록하고, 새 코드가 나오면 오른쪽에 추가합니다.
+            // 바로 앞 코드와 같으면 한 항목으로 합쳐 표시합니다.
             if (chordHistory.lastOrNull() != chord) {
                 chordHistory.add(chord)
-                if (chordHistory.size > 5) {
+                if (chordHistory.size > 10) {
                     chordHistory.removeAt(0)
                 }
                 renderChordHistory(animate = true)
@@ -1895,32 +1882,38 @@ class MainActivity : Activity() {
     }
 
     private fun renderChordHistory(animate: Boolean = false) {
-        if (chordSlots.size < 5) return
+        if (chordSlots.size < 10) return
 
-        // 현재 코드는 첫째 줄 중앙에서 크게 강조합니다.
-        currentChordText.text = chordHistory.lastOrNull() ?: "—"
+        val visibleHistory = chordHistory.takeLast(10)
+        val firstVisibleSlot = 10 - visibleHistory.size
 
-        // 둘째 줄에는 최근 검출된 코드 흐름을 왼쪽부터 표시합니다.
-        val visibleHistory = chordHistory.takeLast(5)
-        val firstVisibleSlot = 5 - visibleHistory.size
         chordSlots.forEachIndexed { index, slot ->
             val historyIndex = index - firstVisibleSlot
             val hasChord = historyIndex in visibleHistory.indices
-            slot.text = if (hasChord) visibleHistory[historyIndex] else ""
+            val isCurrentChord = hasChord && historyIndex == visibleHistory.lastIndex
 
-            val isLatestChord = hasChord && historyIndex == visibleHistory.lastIndex
+            slot.text = if (hasChord) visibleHistory[historyIndex] else ""
             slot.setTextColor(
                 when {
-                    isLatestChord -> Color.rgb(85, 213, 255)
+                    isCurrentChord -> Color.rgb(85, 213, 255)
                     hasChord -> Color.rgb(180, 199, 216)
                     else -> Color.rgb(75, 94, 113)
                 }
             )
-            slot.alpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0f
-            if (animate && hasChord) {
+            slot.background = if (isCurrentChord) {
+                roundedBackground(
+                    Color.rgb(22, 61, 83),
+                    Color.rgb(85, 213, 255)
+                )
+            } else {
+                null
+            }
+            slot.alpha = if (isCurrentChord) 1.0f else if (hasChord) 0.88f else 0f
+
+            if (animate && isCurrentChord) {
                 slot.animate().cancel()
-                slot.translationX = dp(12).toFloat()
-                slot.animate().translationX(0f).setDuration(180L).start()
+                slot.alpha = 0.45f
+                slot.animate().alpha(1.0f).setDuration(180L).start()
             } else {
                 slot.translationX = 0f
             }
@@ -1930,18 +1923,16 @@ class MainActivity : Activity() {
     private fun resetChordDisplay() {
         candidateChord = null
         candidateChordFrames = 0
+        candidateChordSinceMs = 0L
         displayedChord = null
         chordHistory.clear()
-        if (::currentChordText.isInitialized) {
-            currentChordText.text = "—"
-        }
-        if (chordSlots.isNotEmpty()) {
-            chordSlots.forEach {
-                it.text = ""
-                it.alpha = 0f
-                it.setTextColor(Color.rgb(125, 151, 174))
-                it.translationX = 0f
-            }
+
+        chordSlots.forEach {
+            it.text = ""
+            it.alpha = 0f
+            it.background = null
+            it.setTextColor(Color.rgb(125, 151, 174))
+            it.translationX = 0f
         }
     }
 
@@ -2051,7 +2042,7 @@ private class IcyMetadataReader(
                     readTimeout = 30000
                     instanceFollowRedirects = true
                     setRequestProperty("Icy-MetaData", "1")
-                    setRequestProperty("User-Agent", "EasyMP3GuitarChord/1.5")
+                    setRequestProperty("User-Agent", "EasyMP3GuitarChord/1.51")
                 }
                 connection = localConnection
                 localConnection.connect()
