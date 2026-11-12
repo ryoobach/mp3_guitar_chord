@@ -335,7 +335,7 @@ class MainActivity : Activity() {
         }
 
         totalTimeText = TextView(this).apply {
-            text = "총 00:00"
+            text = "00:00"
             textSize = if (isCompact) 12f else 15f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -1165,9 +1165,9 @@ class MainActivity : Activity() {
 
         totalTimeText.text =
             if (duration > 0) {
-                "총 ${formatTime(duration)}"
+                formatTime(duration)
             } else {
-                "총 LIVE"
+                "LIVE"
             }
         updateProgressPercent(position, duration)
     }
@@ -1197,7 +1197,7 @@ class MainActivity : Activity() {
 
     private fun resetTimeDisplay() {
         elapsedTimeText.text = "00:00"
-        totalTimeText.text = "총 00:00"
+        totalTimeText.text = "00:00"
         updateProgressPercent(0, 0)
     }
 
