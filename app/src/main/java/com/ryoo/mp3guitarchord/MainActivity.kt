@@ -51,7 +51,7 @@ class MainActivity : Activity() {
     private lateinit var shuffleButton: Button
     private lateinit var repeatButton: Button
     private lateinit var progressBar: SeekBar
-    private lateinit var volumeBar: SeekBar
+    private lateinit var volumeKnob: RotaryVolumeView
     private lateinit var playlistView: ListView
     private lateinit var adapter: ArrayAdapter<String>
 
@@ -366,37 +366,13 @@ class MainActivity : Activity() {
 
         volumeRow.addView(volumeLabel)
 
-        volumeBar = SeekBar(this).apply {
-            max = 100
-            progress = 80
-            progressTintList = colorList(Color.rgb(245, 214, 107))
-            thumbTintList = colorList(Color.rgb(245, 214, 107))
-
-            setOnSeekBarChangeListener(
-                object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(
-                        seekBar: SeekBar?,
-                        value: Int,
-                        fromUser: Boolean
-                    ) {
-                        val volume = value / 100f
-                        player?.setVolume(volume, volume)
-                    }
-
-                    override fun onStartTrackingTouch(
-                        seekBar: SeekBar?
-                    ) {}
-
-                    override fun onStopTrackingTouch(
-                        seekBar: SeekBar?
-                    ) {}
-                }
-            )
+        volumeKnob = RotaryVolumeView(this, 80) { value ->
+            val volume = value / 100f
+            player?.setVolume(volume, volume)
         }
-
         volumeRow.addView(
-            volumeBar,
-            LinearLayout.LayoutParams(0, dp(32), 1f)
+            volumeKnob,
+            LinearLayout.LayoutParams(dp(if (isCompact) 62 else 76), dp(if (isCompact) 54 else 62))
         )
 
         chordArea.addView(
@@ -409,7 +385,7 @@ class MainActivity : Activity() {
 
         upperArea.addView(
             chordArea,
-            LinearLayout.LayoutParams(0, dp(panelHeight), 2f)
+            LinearLayout.LayoutParams(0, dp(panelHeight), 3f)
         )
 
         playerPanel.addView(upperArea)
@@ -1125,7 +1101,11 @@ class MainActivity : Activity() {
     private fun showUrlDialog() {
 
         val input = EditText(this).apply {
-            hint = "https://example.com/radio.mp3"
+            val saved = getSharedPreferences("player_settings", MODE_PRIVATE)
+                .getString("last_stream_url", "http://live09.inlive.co.kr:11640")
+            setText(saved)
+            setSelection(text.length)
+            hint = "http://live09.inlive.co.kr:11640"
             setSingleLine(true)
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
@@ -1154,8 +1134,9 @@ class MainActivity : Activity() {
             return
         }
 
+        val normalizedAddress = if (address.contains("://")) address else "http://$address"
         val uri = try {
-            Uri.parse(address)
+            Uri.parse(normalizedAddress)
         } catch (_: Exception) {
             null
         }
@@ -1181,6 +1162,8 @@ class MainActivity : Activity() {
             return
         }
 
+        getSharedPreferences("player_settings", MODE_PRIVATE).edit()
+            .putString("last_stream_url", uri.toString()).apply()
         playlist.add(uri)
         songNames.add("RADIO | ${uri.host ?: "인터넷 방송"}")
 
@@ -1381,7 +1364,7 @@ class MainActivity : Activity() {
 
                 isPrepared = true
 
-                val volume = volumeBar.progress / 100f
+                val volume = volumeKnob.value / 100f
                 prepared.setVolume(volume, volume)
 
                 if (prepared.duration > 0) {
