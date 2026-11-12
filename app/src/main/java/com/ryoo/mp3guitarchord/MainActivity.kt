@@ -50,7 +50,7 @@ class MainActivity : Activity() {
     private lateinit var playButton: Button
     private lateinit var shuffleButton: Button
     private lateinit var repeatButton: Button
-    private lateinit var progressBar: SeekBar
+    private lateinit var progressBar: TrackSpectrumView
     private lateinit var volumeBar: HorizontalVolumeBarView
     private lateinit var volumeValueText: TextView
     private lateinit var playlistView: ListView
@@ -69,8 +69,8 @@ class MainActivity : Activity() {
 
                     if (!isSeeking) {
                         if (duration > 0) {
-                            progressBar.max = duration
-                            progressBar.progress = position
+                            progressBar.setDuration(duration)
+                            progressBar.setPosition(position)
                         }
                         updateTimeDisplay(position, duration)
                     }
@@ -434,45 +434,21 @@ class MainActivity : Activity() {
 
         // 진행 바
 
-        progressBar = SeekBar(this).apply {
-            max = 100
-            progress = 0
-            progressTintList = colorList(Color.rgb(85, 213, 255))
-            thumbTintList = colorList(Color.rgb(85, 213, 255))
-
-            setOnSeekBarChangeListener(
-                object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(
-                        seekBar: SeekBar?,
-                        value: Int,
-                        fromUser: Boolean
-                    ) {
-                        if (fromUser && isPrepared) {
-                            updateTimeDisplay(
-                                value,
-                                player?.duration ?: 0
-                            )
-                        }
-                    }
-
-                    override fun onStartTrackingTouch(
-                        seekBar: SeekBar?
-                    ) {
-                        isSeeking = true
-                    }
-
-                    override fun onStopTrackingTouch(
-                        seekBar: SeekBar?
-                    ) {
-                        if (isPrepared &&
-                            (player?.duration ?: 0) > 0
-                        ) {
-                            player?.seekTo(seekBar?.progress ?: 0)
-                        }
-                        isSeeking = false
-                    }
+        progressBar = TrackSpectrumView(this).apply {
+            setOnSeekPositionChanged { position ->
+                if (isPrepared && (player?.duration ?: 0) > 0) {
+                    updateTimeDisplay(position, player?.duration ?: 0)
                 }
-            )
+            }
+            setOnSeekFinished { position ->
+                if (isPrepared && (player?.duration ?: 0) > 0) {
+                    player?.seekTo(position)
+                }
+                isSeeking = false
+            }
+            setOnSeekStarted {
+                isSeeking = true
+            }
         }
 
         playerPanel.addView(
@@ -1365,7 +1341,7 @@ class MainActivity : Activity() {
 
         playButton.text = "…"
         resetTimeDisplay()
-        progressBar.progress = 0
+        progressBar.reset()
 
         try {
             val uri = playlist[index]
@@ -1400,8 +1376,8 @@ class MainActivity : Activity() {
                 prepared.setVolume(volume, volume)
 
                 if (prepared.duration > 0) {
-                    progressBar.max = prepared.duration
-                    progressBar.progress = 0
+                    progressBar.setDuration(prepared.duration)
+                    progressBar.reset()
                 }
 
                 updateTimeDisplay(0, prepared.duration)
@@ -1706,7 +1682,14 @@ class MainActivity : Activity() {
                             }
                             bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
                         }
-                        runOnUiThread { analyzerView.setSpectrum(bars) }
+                        val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
+                        val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
+                        runOnUiThread {
+                            analyzerView.setSpectrum(bars)
+                            if (trackDuration > 0) {
+                                progressBar.recordSpectrum(playbackPosition, trackDuration, bars)
+                            }
+                        }
                     }
                 },
                 (Visualizer.getMaxCaptureRate() / 2).coerceAtLeast(1000),
