@@ -31,7 +31,8 @@ class MainActivity : Activity() {
     private var shuffleMode = false
     private var repeatMode = 0
 
-    private lateinit var timeText: TextView
+    private lateinit var elapsedTimeText: TextView
+    private lateinit var totalTimeText: TextView
     private lateinit var songTitle: TextView
     private lateinit var chordText: TextView
     private lateinit var playButton: Button
@@ -53,16 +54,13 @@ class MainActivity : Activity() {
                     val duration = mp.duration
                     val position = mp.currentPosition
 
-                    if (duration > 0) {
-                        if (!isSeeking) {
+                    if (!isSeeking) {
+                        if (duration > 0) {
                             progressBar.max = duration
                             progressBar.progress = position
                         }
 
-                        timeText.text =
-                            "${formatTime(position)} / ${formatTime(duration)}"
-                    } else {
-                        timeText.text = "${formatTime(position)} / LIVE"
+                        updateTimeDisplay(position, duration)
                     }
                 } catch (_: Exception) {
                 }
@@ -92,9 +90,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(8, 15, 27))
         }
 
-        // ----------------------------------------------
-        // 상단: 앱 이름 + 개발자 + 홈 / 종료 버튼
-        // ----------------------------------------------
+        // 상단: 실제 앱 아이콘 + 앱 이름 + 홈 / 개발자 정보 / 닫기
 
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -102,10 +98,12 @@ class MainActivity : Activity() {
             setPadding(dp(3), 0, dp(2), 0)
         }
 
-        val topInfo = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+        topBar.addView(
+            createAppIcon(dp(32)),
+            LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+                setMargins(0, 0, dp(7), 0)
+            }
+        )
 
         val topTitle = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
@@ -116,24 +114,11 @@ class MainActivity : Activity() {
             includeFontPadding = false
         }
 
-        val topDeveloper = TextView(this).apply {
-            text = "Ryoo Jaesang & 최피디"
-            textSize = 9f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(245, 214, 107))
-            isSingleLine = true
-            includeFontPadding = false
-        }
-
-        topInfo.addView(topTitle)
-        topInfo.addView(topDeveloper)
-
         topBar.addView(
-            topInfo,
+            topTitle,
             LinearLayout.LayoutParams(0, dp(40), 1f)
         )
 
-        // 홈 버튼: 앱을 백그라운드로 보내기
         val homeButton = makeButton("⌂").apply {
             textSize = 21f
             contentDescription = "홈 화면으로 이동"
@@ -142,7 +127,14 @@ class MainActivity : Activity() {
             }
         }
 
-        // 종료 버튼
+        val developerButton = makeButton("ⓘ").apply {
+            textSize = 19f
+            contentDescription = "개발자 정보"
+            setOnClickListener {
+                showDeveloperInfo()
+            }
+        }
+
         val exitButton = makeButton("×").apply {
             textSize = 24f
             contentDescription = "앱 종료"
@@ -152,19 +144,9 @@ class MainActivity : Activity() {
             }
         }
 
-        topBar.addView(
-            homeButton,
-            LinearLayout.LayoutParams(dp(42), dp(36)).apply {
-                setMargins(dp(3), 0, dp(3), 0)
-            }
-        )
-
-        topBar.addView(
-            exitButton,
-            LinearLayout.LayoutParams(dp(42), dp(36)).apply {
-                setMargins(dp(3), 0, dp(2), 0)
-            }
-        )
+        topBar.addView(homeButton, topButtonParams())
+        topBar.addView(developerButton, topButtonParams())
+        topBar.addView(exitButton, topButtonParams())
 
         root.addView(
             topBar,
@@ -176,9 +158,7 @@ class MainActivity : Activity() {
 
         addDivider(root)
 
-        // ----------------------------------------------
         // 메인 재생 화면
-        // ----------------------------------------------
 
         val playerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -192,7 +172,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        // 왼쪽 시간 표시 영역
+        // 왼쪽 시간 표시: 현재 시간 / 전체 시간 두 줄
+
         val timeArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -200,9 +181,9 @@ class MainActivity : Activity() {
             setPadding(dp(3), dp(5), dp(3), dp(5))
         }
 
-        timeText = TextView(this).apply {
-            text = "00:00 / 00:00"
-            textSize = 14f
+        elapsedTimeText = TextView(this).apply {
+            text = "00:00"
+            textSize = 27f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(245, 214, 107))
@@ -210,11 +191,29 @@ class MainActivity : Activity() {
             includeFontPadding = false
         }
 
+        totalTimeText = TextView(this).apply {
+            text = "/ 00:00"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(180, 195, 210))
+            isSingleLine = true
+            includeFontPadding = false
+        }
+
         timeArea.addView(
-            timeText,
+            elapsedTimeText,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+                dp(43)
+            )
+        )
+
+        timeArea.addView(
+            totalTimeText,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(28)
             )
         )
 
@@ -224,6 +223,7 @@ class MainActivity : Activity() {
         )
 
         // 오른쪽 노래 제목 + 기타 코드 + 볼륨
+
         val chordArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -231,7 +231,6 @@ class MainActivity : Activity() {
             setPadding(dp(7), dp(5), dp(7), dp(5))
         }
 
-        // 노래 제목
         songTitle = TextView(this).apply {
             text = "곡을 선택해 주세요"
             textSize = 15f
@@ -251,7 +250,6 @@ class MainActivity : Activity() {
             )
         )
 
-        // 기타 코드
         chordText = TextView(this).apply {
             text = "Gm7"
             textSize = 32f
@@ -270,6 +268,7 @@ class MainActivity : Activity() {
         )
 
         // 볼륨 조절
+
         val volumeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -333,9 +332,7 @@ class MainActivity : Activity() {
 
         playerPanel.addView(upperArea)
 
-        // ----------------------------------------------
         // 곡 진행 바
-        // ----------------------------------------------
 
         progressBar = SeekBar(this).apply {
             max = 100
@@ -351,9 +348,10 @@ class MainActivity : Activity() {
                         fromUser: Boolean
                     ) {
                         if (fromUser && isPrepared) {
-                            timeText.text =
-                                "${formatTime(value)} / " +
-                                "${formatTime(player?.duration ?: 0)}"
+                            updateTimeDisplay(
+                                value,
+                                player?.duration ?: 0
+                            )
                         }
                     }
 
@@ -386,9 +384,7 @@ class MainActivity : Activity() {
             )
         )
 
-        // ----------------------------------------------
         // 재생 관련 버튼
-        // ----------------------------------------------
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -451,9 +447,7 @@ class MainActivity : Activity() {
             )
         )
 
-        // ----------------------------------------------
         // 플레이리스트 제목
-        // ----------------------------------------------
 
         val playlistTitle = TextView(this).apply {
             text = "PLAY LIST"
@@ -471,9 +465,7 @@ class MainActivity : Activity() {
             )
         )
 
-        // ----------------------------------------------
         // 플레이리스트
-        // ----------------------------------------------
 
         playlistView = ListView(this).apply {
             choiceMode = ListView.CHOICE_MODE_MULTIPLE
@@ -500,6 +492,8 @@ class MainActivity : Activity() {
         playlistView.adapter = adapter
 
         // 남은 화면 공간만 플레이리스트에 할당
+        // 하단 버튼은 별도 고정 영역으로 유지
+
         root.addView(
             playlistView,
             LinearLayout.LayoutParams(
@@ -509,9 +503,7 @@ class MainActivity : Activity() {
             )
         )
 
-        // ----------------------------------------------
-        // 맨 아래: 관리 버튼 + 앱 아이콘 + 개발자 표시
-        // ----------------------------------------------
+        // 하단: 왼쪽 ADD / REM / SEL, 오른쪽 기타 아이콘 + 앱 이름
 
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -539,9 +531,9 @@ class MainActivity : Activity() {
         bottomRow.addView(remove, bottomButtonParams())
         bottomRow.addView(select, bottomButtonParams())
 
-        // 하단 브랜딩
+        // 오른쪽 브랜딩은 한 줄로 표시
         bottomRow.addView(
-            createBrandRow(true),
+            createBottomBrand(),
             LinearLayout.LayoutParams(0, dp(42), 1f)
         )
 
@@ -557,46 +549,110 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 하단 브랜딩
+    // 실제 앱 아이콘 불러오기
     // --------------------------------------------------
 
-    private fun createBrandRow(compact: Boolean): LinearLayout {
+    private fun createAppIcon(size: Int): ImageView {
+
+        return ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+
+            try {
+                setImageDrawable(packageManager.getApplicationIcon(packageName))
+            } catch (_: Exception) {
+                setImageDrawable(
+                    roundedBackground(
+                        Color.rgb(18, 60, 97),
+                        Color.rgb(85, 213, 255)
+                    )
+                )
+            }
+
+            contentDescription = "Easy MP3 Guitar Chord 앱 아이콘"
+        }
+    }
+
+    // --------------------------------------------------
+    // 개발자 정보 창
+    // --------------------------------------------------
+
+    private fun showDeveloperInfo() {
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(20), dp(24), dp(20))
+        }
+
+        content.addView(
+            createAppIcon(dp(88)),
+            LinearLayout.LayoutParams(dp(88), dp(88)).apply {
+                gravity = Gravity.CENTER
+                bottomMargin = dp(14)
+            }
+        )
+
+        val title = TextView(this).apply {
+            text = "Easy MP3 Guitar Chord"
+            textSize = 19f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(85, 213, 255))
+        }
+
+        content.addView(
+            title,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        val developer = TextView(this).apply {
+            text = "Ryoo Jaesang & 최피디"
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(245, 214, 107))
+            setPadding(0, dp(12), 0, dp(4))
+        }
+
+        content.addView(developer)
+
+        AlertDialog.Builder(this)
+            .setTitle("개발자 정보")
+            .setView(content)
+            .setPositiveButton("확인", null)
+            .show()
+    }
+
+    // --------------------------------------------------
+    // 하단 브랜딩: 기타 아이콘 + 앱 이름 한 줄
+    // --------------------------------------------------
+
+    private fun createBottomBrand(): LinearLayout {
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), 0, dp(2), 0)
+            setPadding(dp(3), 0, 0, 0)
         }
 
-        val iconSize = if (compact) 30 else 38
-
-        val icon = TextView(this).apply {
+        val guitarIcon = TextView(this).apply {
             text = "🎸"
+            textSize = 21f
             gravity = Gravity.CENTER
-            textSize = if (compact) 19f else 25f
-            background = roundedBackground(
-                Color.rgb(18, 60, 97),
-                Color.rgb(85, 213, 255)
-            )
+            includeFontPadding = false
         }
 
         row.addView(
-            icon,
-            LinearLayout.LayoutParams(
-                dp(iconSize),
-                dp(iconSize)
-            )
+            guitarIcon,
+            LinearLayout.LayoutParams(dp(30), dp(36))
         )
-
-        val info = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, 0, 0)
-        }
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = if (compact) 10f else 14f
+            textSize = 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
@@ -604,28 +660,37 @@ class MainActivity : Activity() {
             includeFontPadding = false
         }
 
-        val developer = TextView(this).apply {
-            text = "Ryoo Jaesang & 최피디"
-            textSize = if (compact) 8f else 10f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(245, 214, 107))
-            isSingleLine = true
-            includeFontPadding = false
-        }
-
-        info.addView(title)
-        info.addView(developer)
-
         row.addView(
-            info,
+            title,
             LinearLayout.LayoutParams(
                 0,
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
             )
         )
 
         return row
+    }
+
+    // --------------------------------------------------
+    // 시간 표시
+    // --------------------------------------------------
+
+    private fun updateTimeDisplay(position: Int, duration: Int) {
+
+        elapsedTimeText.text = formatTime(position)
+
+        totalTimeText.text =
+            if (duration > 0) {
+                "/ ${formatTime(duration)}"
+            } else {
+                "/ LIVE"
+            }
+    }
+
+    private fun resetTimeDisplay() {
+        elapsedTimeText.text = "00:00"
+        totalTimeText.text = "/ 00:00"
     }
 
     // --------------------------------------------------
@@ -680,6 +745,12 @@ class MainActivity : Activity() {
                 Color.rgb(35, 65, 88),
                 Color.rgb(64, 103, 130)
             )
+        }
+    }
+
+    private fun topButtonParams(): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(dp(38), dp(36)).apply {
+            setMargins(dp(2), 0, dp(2), 0)
         }
     }
 
@@ -950,7 +1021,7 @@ class MainActivity : Activity() {
         playlistView.setItemChecked(index, true)
 
         playButton.text = "…"
-        timeText.text = "00:00 / 00:00"
+        resetTimeDisplay()
         progressBar.progress = 0
 
         try {
@@ -986,16 +1057,11 @@ class MainActivity : Activity() {
                 prepared.setVolume(volume, volume)
 
                 if (prepared.duration > 0) {
-
                     progressBar.max = prepared.duration
                     progressBar.progress = 0
-
-                    timeText.text =
-                        "00:00 / ${formatTime(prepared.duration)}"
-
-                } else {
-                    timeText.text = "00:00 / LIVE"
                 }
+
+                updateTimeDisplay(0, prepared.duration)
 
                 prepared.start()
                 playButton.text = "Ⅱ"
@@ -1068,6 +1134,7 @@ class MainActivity : Activity() {
     }
 
     // 정지 버튼
+
     private fun stopPlayback() {
 
         val mp = player
@@ -1082,8 +1149,7 @@ class MainActivity : Activity() {
                 mp.seekTo(0)
                 progressBar.progress = 0
 
-                timeText.text =
-                    "00:00 / ${formatTime(mp.duration)}"
+                updateTimeDisplay(0, mp.duration)
 
                 playButton.text = "▶"
 
@@ -1229,7 +1295,7 @@ class MainActivity : Activity() {
             currentIndex = -1
 
             playButton.text = "▶"
-            timeText.text = "00:00 / 00:00"
+            resetTimeDisplay()
             progressBar.progress = 0
             songTitle.text = "곡을 선택해 주세요"
         }
