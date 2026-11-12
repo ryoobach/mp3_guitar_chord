@@ -50,6 +50,6 @@ object ChordDetector {
                 }
             }
         }
-        return if (bestScore >= 0.42) bestName else null
+        return if (bestScore >= 0.32) bestName else null
     }
 }
