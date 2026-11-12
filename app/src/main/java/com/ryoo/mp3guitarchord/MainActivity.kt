@@ -895,13 +895,26 @@ class MainActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = "Easy MP3 Guitar Chord $versionName"
-            textSize = 14f            typeface = Typeface.DEFAULT_BOLD
+            text = "Easy MP3 Guitar Chord"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
         }
         textColumn.addView(title)
+
+        val version = TextView(this).apply {
+            text = "Version $versionName"
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(180, 195, 210))
+            isSingleLine = true
+            includeFontPadding = false
+            setPadding(0, dp(3), 0, 0)
+        }
+        textColumn.addView(version)
 
         val developer = TextView(this).apply {
             text = "Ryoo Jaesang & 최피디"
