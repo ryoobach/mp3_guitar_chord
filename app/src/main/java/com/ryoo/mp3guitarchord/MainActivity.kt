@@ -1,11 +1,14 @@
 
 package com.ryoo.mp3guitarchord
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.audiofx.Visualizer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -41,7 +44,9 @@ class MainActivity : Activity() {
     private lateinit var elapsedTimeText: TextView
     private lateinit var totalTimeText: TextView
     private lateinit var songTitle: TextView
-    private lateinit var chordText: TextView
+    private val chordSlots = mutableListOf<TextView>()
+    private lateinit var analyzerView: AudioVisualizerView
+    private var audioVisualizer: Visualizer? = null
     private lateinit var playButton: Button
     private lateinit var shuffleButton: Button
     private lateinit var repeatButton: Button
@@ -237,7 +242,7 @@ class MainActivity : Activity() {
         // 왼쪽 시간 표시
 
         val timeArea = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setBackgroundColor(Color.rgb(23, 40, 58))
             setPadding(dp(2), dp(3), dp(2), dp(3))
@@ -265,20 +270,12 @@ class MainActivity : Activity() {
 
         timeArea.addView(
             elapsedTimeText,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
         )
 
         timeArea.addView(
             totalTimeText,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                0.7f
-            )
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
         )
 
         upperArea.addView(
@@ -302,7 +299,9 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(245, 214, 107))
             isSingleLine = true
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+            marqueeRepeatLimit = -1
+            isSelected = true
             includeFontPadding = false
         }
 
@@ -314,16 +313,35 @@ class MainActivity : Activity() {
             )
         )
 
-        chordText = TextView(this).apply {
-            text = "Gm7"
-            textSize = chordFontSize
-            typeface = Typeface.DEFAULT_BOLD
+        val chordRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(85, 213, 255))
+        }
+
+        // 코드 시간표가 연결되기 전에는 임의의 코드를 표시하지 않습니다.
+        // 다섯 칸은 이후 현재 재생 위치 기준 앞뒤 코드 표시 영역입니다.
+        repeat(5) { index ->
+            val slot = TextView(this).apply {
+                text = "—"
+                textSize = if (index == 2) chordFontSize * 0.78f else chordFontSize * 0.58f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(
+                    if (index == 2) Color.rgb(85, 213, 255)
+                    else Color.rgb(125, 151, 174)
+                )
+                includeFontPadding = false
+                maxLines = 1
+            }
+            chordSlots.add(slot)
+            chordRow.addView(
+                slot,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            )
         }
 
         chordArea.addView(
-            chordText,
+            chordRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
@@ -395,6 +413,16 @@ class MainActivity : Activity() {
         )
 
         playerPanel.addView(upperArea)
+
+        // 재생 중인 오디오의 주파수 대역을 실시간으로 표시합니다.
+        analyzerView = AudioVisualizerView(this)
+        playerPanel.addView(
+            analyzerView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(if (isCompact) 48 else 60)
+            )
+        )
 
         // 진행 바
 
@@ -1351,6 +1379,7 @@ class MainActivity : Activity() {
 
                 updateTimeDisplay(0, prepared.duration)
 
+                attachAudioVisualizer(prepared.audioSessionId)
                 prepared.start()
                 playButton.text = "Ⅱ"
             }
@@ -1609,12 +1638,94 @@ class MainActivity : Activity() {
         ).show()
     }
 
+    private fun attachAudioVisualizer(audioSessionId: Int) {
+        releaseAudioVisualizer()
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 210)
+            }
+            return
+        }
+
+        try {
+            val visualizer = Visualizer(audioSessionId)
+            visualizer.captureSize = Visualizer.getCaptureSizeRange()[1]
+            visualizer.setDataCaptureListener(
+                object : Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(
+                        visualizer: Visualizer?,
+                        waveform: ByteArray?,
+                        samplingRate: Int
+                    ) = Unit
+
+                    override fun onFftDataCapture(
+                        visualizer: Visualizer?,
+                        fft: ByteArray?,
+                        samplingRate: Int
+                    ) {
+                        if (fft == null || fft.size < 8) return
+                        val bars = FloatArray(48)
+                        val usableBins = fft.size / 2
+                        for (bar in bars.indices) {
+                            val start = (1 + bar * bar / bars.size * (usableBins - 1) / bars.size)
+                                .coerceIn(1, usableBins - 1)
+                            val end = (start + (bar / 3) + 1).coerceAtMost(usableBins)
+                            var peak = 0.0
+                            for (bin in start until end) {
+                                val real = fft[2 * bin].toDouble()
+                                val imaginary = fft[2 * bin + 1].toDouble()
+                                peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
+                            }
+                            bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
+                        }
+                        runOnUiThread { analyzerView.setSpectrum(bars) }
+                    }
+                },
+                (Visualizer.getMaxCaptureRate() / 2).coerceAtLeast(1000),
+                false,
+                true
+            )
+            visualizer.enabled = true
+            audioVisualizer = visualizer
+        } catch (_: Exception) {
+            analyzerView.setSpectrum(FloatArray(48))
+        }
+    }
+
+    private fun releaseAudioVisualizer() {
+        try {
+            audioVisualizer?.enabled = false
+            audioVisualizer?.release()
+        } catch (_: Exception) {
+        }
+        audioVisualizer = null
+        if (::analyzerView.isInitialized) {
+            analyzerView.setSpectrum(FloatArray(48))
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 210 &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
+            player?.let { if (isPrepared) attachAudioVisualizer(it.audioSessionId) }
+        }
+    }
+
     // --------------------------------------------------
     // 플레이어 정리 / 시간 표시
     // --------------------------------------------------
 
     private fun releaseCurrentPlayer() {
 
+        releaseAudioVisualizer()
         isPrepared = false
 
         try {
