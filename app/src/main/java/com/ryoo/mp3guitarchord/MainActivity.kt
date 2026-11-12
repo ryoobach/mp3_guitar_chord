@@ -51,7 +51,8 @@ class MainActivity : Activity() {
     private lateinit var shuffleButton: Button
     private lateinit var repeatButton: Button
     private lateinit var progressBar: SeekBar
-    private lateinit var volumeKnob: RotaryVolumeView
+    private lateinit var volumeBar: HorizontalVolumeBarView
+    private lateinit var volumeValueText: TextView
     private lateinit var playlistView: ListView
     private lateinit var adapter: ArrayAdapter<String>
 
@@ -366,13 +367,29 @@ class MainActivity : Activity() {
 
         volumeRow.addView(volumeLabel)
 
-        volumeKnob = RotaryVolumeView(this, 80) { value ->
+        volumeBar = HorizontalVolumeBarView(this, 80) { value ->
             val volume = value / 100f
             player?.setVolume(volume, volume)
+            volumeValueText.text = "$value%"
         }
         volumeRow.addView(
-            volumeKnob,
-            LinearLayout.LayoutParams(dp(if (isCompact) 62 else 76), dp(if (isCompact) 54 else 62))
+            volumeBar,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                setMargins(dp(3), 0, dp(3), 0)
+            }
+        )
+
+        volumeValueText = TextView(this).apply {
+            text = "80%"
+            textSize = if (isCompact) 10f else 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(85, 213, 255))
+            isSingleLine = true
+        }
+        volumeRow.addView(
+            volumeValueText,
+            LinearLayout.LayoutParams(dp(38), LinearLayout.LayoutParams.MATCH_PARENT)
         )
 
         chordArea.addView(
@@ -1364,7 +1381,7 @@ class MainActivity : Activity() {
 
                 isPrepared = true
 
-                val volume = volumeKnob.value / 100f
+                val volume = volumeBar.value / 100f
                 prepared.setVolume(volume, volume)
 
                 if (prepared.duration > 0) {
