@@ -1736,7 +1736,12 @@ class MainActivity : Activity() {
             currentIndex = oldIndex - removeIndexes.count { it < oldIndex }
 
             if (currentIndex in songNames.indices) {
-                setScrollingSongTitle(songNames[currentIndex])
+                val currentUri = playlist[currentIndex]
+                val isCurrentStream =
+                    currentUri.scheme == "http" || currentUri.scheme == "https"
+                setScrollingSongTitle(
+                    if (isCurrentStream) "인터넷 방송" else songNames[currentIndex]
+                )
             }
         }
 
@@ -2061,10 +2066,10 @@ private class IcyMetadataReader(
      * Prefer strict UTF-8, then try Korean legacy encodings for CP949/EUC-KR stations.
      */
     private fun decodeMetadata(bytes: ByteArray): String {
-        val charsets = listOf(
+        val charsets = listOfNotNull(
             Charsets.UTF_8,
-            java.nio.charset.Charset.forName("EUC-KR"),
-            java.nio.charset.Charset.forName("x-windows-949")
+            runCatching { java.nio.charset.Charset.forName("EUC-KR") }.getOrNull(),
+            runCatching { java.nio.charset.Charset.forName("x-windows-949") }.getOrNull()
         )
 
         var bestText = ""
