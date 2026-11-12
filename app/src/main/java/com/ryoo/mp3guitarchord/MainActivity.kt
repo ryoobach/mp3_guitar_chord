@@ -1376,8 +1376,8 @@ class MainActivity : Activity() {
                 prepared.setVolume(volume, volume)
 
                 if (prepared.duration > 0) {
-                    progressBar.setDuration(prepared.duration)
                     progressBar.reset()
+                    progressBar.setDuration(prepared.duration)
                 }
 
                 updateTimeDisplay(0, prepared.duration)
