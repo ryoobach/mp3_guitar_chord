@@ -40,8 +40,8 @@ class RotaryVolumeView(
     init { isClickable = true; contentDescription = "볼륨 조절" }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val w = MeasureSpec.getSize(widthMeasureSpec).coerceAtLeast(MeasureSpec.getSuggestedMinimumWidth())
-        val h = MeasureSpec.getSize(heightMeasureSpec).coerceAtLeast(MeasureSpec.getSuggestedMinimumHeight())
+        val w = MeasureSpec.getSize(widthMeasureSpec).coerceAtLeast(suggestedMinimumWidth)
+        val h = MeasureSpec.getSize(heightMeasureSpec).coerceAtLeast(suggestedMinimumHeight)
         setMeasuredDimension(w, h)
     }
 
