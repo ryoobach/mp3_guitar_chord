@@ -145,9 +145,9 @@ class MainActivity : Activity() {
         }
 
         val timeFontSize = when {
-            isCompact -> 22f
-            isTablet -> 31f
-            else -> 27f
+            isCompact -> 23f
+            isTablet -> 32f
+            else -> 28f
         }
 
         // 기타 코드 글씨를 한 번 더 눈에 띄게 축소합니다.
@@ -273,8 +273,12 @@ class MainActivity : Activity() {
         }
 
         totalTimeText = TextView(this).apply {
-            text = "총 00:00"
-            textSize = if (isCompact) 12f else 15f
+            text = "00:00"
+            textSize = when {
+                isCompact -> 10f
+                isTablet -> 13f
+                else -> 12f
+            }
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(180, 195, 210))
