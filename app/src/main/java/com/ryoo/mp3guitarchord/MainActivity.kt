@@ -166,9 +166,9 @@ class MainActivity : Activity() {
         val topTitle = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
             textSize = when {
-                isCompact -> 18f
-                isTablet -> 23f
-                else -> 21f
+                isCompact -> 17f
+                isTablet -> 22f
+                else -> 19f
             }
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
@@ -961,7 +961,7 @@ class MainActivity : Activity() {
     }
 
     private fun topButtonParams(isCompact: Boolean): LinearLayout.LayoutParams {
-        val size = if (isCompact) 28 else 30
+        val size = if (isCompact) 26 else 28
 
         return LinearLayout.LayoutParams(dp(size), dp(size - 2)).apply {
             setMargins(dp(2), 0, dp(2), 0)
