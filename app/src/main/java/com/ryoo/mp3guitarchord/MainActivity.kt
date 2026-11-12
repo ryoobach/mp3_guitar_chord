@@ -157,18 +157,18 @@ class MainActivity : Activity() {
         }
 
         topBar.addView(
-            createAppIcon(dp(42)),
-            LinearLayout.LayoutParams(dp(42), dp(42)).apply {
-                setMargins(0, 0, dp(8), 0)
+            createAppIcon(dp(32)),
+            LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+                setMargins(0, 0, dp(4), 0)
             }
         )
 
         val topTitle = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
             textSize = when {
-                isCompact -> 17f
+                isCompact -> 16f
                 isTablet -> 22f
-                else -> 19f
+                else -> 18f
             }
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
@@ -182,7 +182,7 @@ class MainActivity : Activity() {
         )
 
         val homeButton = makeButton("⌂").apply {
-            textSize = 13f
+            textSize = 10f
             contentDescription = "홈 화면으로 이동"
             setOnClickListener {
                 moveTaskToBack(true)
@@ -190,7 +190,7 @@ class MainActivity : Activity() {
         }
 
         val developerButton = makeButton("ⓘ").apply {
-            textSize = 13f
+            textSize = 10f
             contentDescription = "개발자 정보"
             setOnClickListener {
                 showDeveloperInfo()
@@ -198,7 +198,7 @@ class MainActivity : Activity() {
         }
 
         val exitButton = makeButton("×").apply {
-            textSize = 15f
+            textSize = 12f
             contentDescription = "앱 종료"
             setOnClickListener {
                 releaseCurrentPlayer()
@@ -674,139 +674,193 @@ class MainActivity : Activity() {
 
     private fun createAppIcon(size: Int): ImageView {
 
-        val bitmap = Bitmap.createBitmap(
-            108,
-            108,
-            Bitmap.Config.ARGB_8888
-        )
+        val bitmap = Bitmap.createBitmap(108, 108, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Fender Stratocaster의 더블 컷어웨이 바디와 긴 넥을
-        // 참고한 오리지널 기타 실루엣입니다.
+        // 일렉트릭 펜더 스트라토캐스터를 떠올릴 수 있는
+        // 더블 컷어웨이 바디, 넥, 헤드와 픽업을 표현합니다.
         paint.color = Color.rgb(8, 15, 27)
-        canvas.drawRoundRect(
-            RectF(1f, 1f, 107f, 107f),
-            19f,
-            19f,
-            paint
-        )
+        canvas.drawRoundRect(RectF(1f, 1f, 107f, 107f), 18f, 18f, paint)
 
         val neck = Path().apply {
-            moveTo(57f, 17f)
-            lineTo(66f, 13f)
-            lineTo(72f, 51f)
-            lineTo(65f, 57f)
-            lineTo(55f, 52f)
+            moveTo(48f, 8f)
+            lineTo(60f, 8f)
+            lineTo(62f, 57f)
+            lineTo(46f, 57f)
             close()
         }
-        paint.color = Color.rgb(35, 190, 235)
+        paint.color = Color.rgb(205, 157, 99)
         canvas.drawPath(neck, paint)
 
+        // 지판과 프렛
+        paint.color = Color.rgb(35, 39, 47)
+        canvas.drawRect(49f, 9f, 59f, 56f, paint)
+        paint.color = Color.rgb(224, 218, 197)
+        paint.strokeWidth = 1f
+        for (y in 17..49 step 6) {
+            canvas.drawLine(49f, y.toFloat(), 59f, y.toFloat(), paint)
+        }
+        for (x in 51..57 step 3) {
+            canvas.drawLine(x.toFloat(), 9f, x.toFloat(), 56f, paint)
+        }
+
+        // 스트라토캐스터 특유의 헤드스톡
         val head = Path().apply {
-            moveTo(56f, 16f)
-            lineTo(57f, 7f)
-            lineTo(73f, 5f)
-            lineTo(78f, 13f)
-            lineTo(68f, 20f)
+            moveTo(48f, 10f)
+            lineTo(45f, 4f)
+            lineTo(49f, 2f)
+            lineTo(67f, 5f)
+            lineTo(65f, 12f)
+            lineTo(59f, 15f)
             close()
         }
-        paint.color = Color.rgb(235, 190, 112)
+        paint.color = Color.rgb(218, 184, 133)
         canvas.drawPath(head, paint)
 
+        // 더블 컷어웨이 바디
         val body = Path().apply {
-            moveTo(55f, 45f)
-            cubicTo(47f, 40f, 38f, 43f, 34f, 51f)
-            cubicTo(30f, 57f, 34f, 63f, 29f, 70f)
-            cubicTo(24f, 79f, 31f, 89f, 42f, 89f)
-            cubicTo(49f, 89f, 52f, 85f, 57f, 82f)
-            cubicTo(63f, 87f, 71f, 87f, 76f, 80f)
-            cubicTo(81f, 73f, 76f, 66f, 73f, 61f)
-            cubicTo(78f, 53f, 70f, 44f, 61f, 44f)
+            moveTo(47f, 48f)
+            cubicTo(42f, 43f, 35f, 39f, 29f, 42f)
+            cubicTo(24f, 45f, 25f, 53f, 31f, 58f)
+            cubicTo(25f, 63f, 23f, 73f, 27f, 84f)
+            cubicTo(31f, 96f, 43f, 101f, 54f, 97f)
+            cubicTo(65f, 101f, 77f, 96f, 81f, 84f)
+            cubicTo(85f, 73f, 83f, 63f, 77f, 58f)
+            cubicTo(83f, 53f, 84f, 45f, 79f, 42f)
+            cubicTo(73f, 39f, 66f, 43f, 61f, 48f)
+            lineTo(60f, 57f)
+            lineTo(48f, 57f)
             close()
         }
-        paint.color = Color.rgb(220, 65, 58)
+        paint.color = Color.rgb(205, 48, 48)
         canvas.drawPath(body, paint)
+        paint.color = Color.rgb(255, 139, 116)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.4f
+        canvas.drawPath(body, paint)
+        paint.style = Paint.Style.FILL
 
-        paint.color = Color.rgb(245, 225, 190)
-        paint.strokeWidth = 1.2f
-        canvas.drawLine(59f, 19f, 55f, 73f, paint)
-        canvas.drawLine(62f, 18f, 59f, 73f, paint)
+        // 픽가드와 3개의 싱글코일 픽업
+        val pickguard = Path().apply {
+            moveTo(42f, 57f)
+            lineTo(66f, 57f)
+            lineTo(72f, 76f)
+            lineTo(62f, 84f)
+            lineTo(42f, 79f)
+            lineTo(36f, 65f)
+            close()
+        }
+        paint.color = Color.rgb(239, 226, 202)
+        canvas.drawPath(pickguard, paint)
+        paint.color = Color.rgb(65, 72, 82)
+        for (y in listOf(60f, 66f, 72f)) {
+            canvas.drawRoundRect(RectF(46f, y, 62f, y + 3f), 1f, 1f, paint)
+        }
 
+        // 브리지와 조절 노브
+        paint.color = Color.rgb(190, 190, 183)
+        canvas.drawRect(45f, 77f, 64f, 80f, paint)
         paint.color = Color.rgb(245, 214, 107)
-        canvas.drawRoundRect(
-            RectF(43f, 57f, 66f, 67f),
-            2f,
-            2f,
-            paint
-        )
+        canvas.drawCircle(70f, 65f, 2.2f, paint)
+        canvas.drawCircle(72f, 72f, 2.2f, paint)
 
+        // 6개 줄
+        paint.color = Color.rgb(255, 246, 220)
+        paint.strokeWidth = 0.7f
+        for (x in listOf(50f, 52f, 54f, 56f, 58f, 60f)) {
+            canvas.drawLine(x, 7f, x - 1f, 82f, paint)
+        }
+
+        // 기타 바디 안쪽에 앱 이름을 선명하게 표시합니다.
         paint.color = Color.rgb(8, 15, 27)
+        canvas.drawRoundRect(RectF(27f, 83f, 81f, 96f), 2f, 2f, paint)
+        paint.color = Color.WHITE
         paint.textAlign = Paint.Align.CENTER
-        paint.typeface = Typeface.create(
-            Typeface.DEFAULT,
-            Typeface.BOLD
-        )
-        paint.textSize = 5.2f
-        canvas.drawText("Easy MP3", 54.5f, 75f, paint)
-        paint.textSize = 4.7f
-        canvas.drawText("Guitar Chord", 54.5f, 81f, paint)
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        paint.textSize = 6.2f
+        canvas.drawText("EASY MP3", 54f, 89f, paint)
+        paint.textSize = 5.4f
+        canvas.drawText("GUITAR CHORD", 54f, 94f, paint)
 
         return ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageBitmap(
-                Bitmap.createScaledBitmap(bitmap, size, size, true)
-            )
-            contentDescription = "스트라토캐스터 기타 모양의 Easy MP3 Guitar Chord 앱 로고"
+            setImageBitmap(Bitmap.createScaledBitmap(bitmap, size, size, true))
+            contentDescription = "일렉트릭 스트라토캐스터 기타 모양의 Easy MP3 Guitar Chord 앱 아이콘"
         }
     }
 
     // --------------------------------------------------
-    // 개발자 정보
+    // 앱 정보
     // --------------------------------------------------
 
     private fun showDeveloperInfo() {
 
         val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(24), dp(20), dp(24), dp(20))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            isClickable = true
+            isFocusable = true
+            background = roundedBackground(
+                Color.rgb(13, 26, 42),
+                Color.rgb(52, 97, 122)
+            )
         }
 
         content.addView(
-            createAppIcon(dp(88)),
-            LinearLayout.LayoutParams(dp(88), dp(88)).apply {
-                gravity = Gravity.CENTER
-                bottomMargin = dp(14)
+            createAppIcon(dp(54)),
+            LinearLayout.LayoutParams(dp(54), dp(54)).apply {
+                setMargins(0, 0, dp(12), 0)
             }
         )
 
-        val title = TextView(this).apply {
-            text = "Easy MP3 Guitar Chord"
-            textSize = 19f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(85, 213, 255))
+        val textColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
         }
 
-        content.addView(title)
+        val title = TextView(this).apply {
+            text = "Easy MP3 Guitar Chord"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(85, 213, 255))
+            isSingleLine = true
+            includeFontPadding = false
+        }
+        textColumn.addView(title)
 
         val developer = TextView(this).apply {
             text = "Ryoo Jaesang & 최피디"
-            textSize = 15f
+            textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
             setTextColor(Color.rgb(245, 214, 107))
-            setPadding(0, dp(12), 0, dp(4))
+            setPadding(0, dp(5), 0, 0)
+            isSingleLine = true
+            includeFontPadding = false
         }
+        textColumn.addView(developer)
 
-        content.addView(developer)
+        content.addView(
+            textColumn,
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
 
-        AlertDialog.Builder(this)
-            .setTitle("개발자 정보")
+        val dialog = AlertDialog.Builder(this)
             .setView(content)
-            .setPositiveButton("확인", null)
-            .show()
+            .create()
+
+        content.setOnClickListener { dialog.dismiss() }
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(
+            android.R.color.transparent
+        )
+        dialog.window?.setLayout(dp(290), LinearLayout.LayoutParams.WRAP_CONTENT)
     }
 
     // --------------------------------------------------
@@ -961,10 +1015,11 @@ class MainActivity : Activity() {
     }
 
     private fun topButtonParams(isCompact: Boolean): LinearLayout.LayoutParams {
-        val size = if (isCompact) 26 else 28
+        val width = if (isCompact) 18 else 20
+        val height = if (isCompact) 18 else 20
 
-        return LinearLayout.LayoutParams(dp(size), dp(size - 2)).apply {
-            setMargins(dp(2), 0, dp(2), 0)
+        return LinearLayout.LayoutParams(dp(width), dp(height)).apply {
+            setMargins(dp(1), 0, dp(1), 0)
         }
     }
 
