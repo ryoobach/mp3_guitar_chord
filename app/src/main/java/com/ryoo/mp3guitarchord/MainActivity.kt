@@ -45,6 +45,9 @@ class MainActivity : Activity() {
     private lateinit var totalTimeText: TextView
     private lateinit var songTitle: TextView
     private val chordSlots = mutableListOf<TextView>()
+    private var candidateChord: String? = null
+    private var candidateChordFrames = 0
+    private var displayedChord: String? = null
     private lateinit var analyzerView: AudioVisualizerView
     private var audioVisualizer: Visualizer? = null
     private lateinit var playButton: Button
@@ -342,8 +345,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
 
-        // 코드 시간표가 연결되기 전에는 임의의 코드를 표시하지 않습니다.
-        // 다섯 칸은 이후 현재 재생 위치 기준 앞뒤 코드 표시 영역입니다.
+        // 가운데 칸에는 재생 음원에서 실시간으로 추정한 현재 기타 코드를 표시합니다.
         repeat(5) { index ->
             val slot = TextView(this).apply {
                 text = "—"
@@ -715,6 +717,10 @@ class MainActivity : Activity() {
         paint.color = Color.rgb(8, 15, 27)
         canvas.drawRoundRect(RectF(1f, 1f, 107f, 107f), 18f, 18f, paint)
 
+        // 기타 전체를 살짝 기울여 실제 일렉트릭 기타를 비스듬히 놓은 느낌을 줍니다.
+        canvas.save()
+        canvas.rotate(-9f, 54f, 54f)
+
         val neck = Path().apply {
             moveTo(48f, 8f)
             lineTo(60f, 8f)
@@ -814,6 +820,7 @@ class MainActivity : Activity() {
         canvas.drawText("EASY MP3", 54f, 89f, paint)
         paint.textSize = 5.4f
         canvas.drawText("GUITAR CHORD", 54f, 94f, paint)
+        canvas.restore()
 
         return ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -831,7 +838,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             isClickable = true
             isFocusable = true
             background = roundedBackground(
@@ -841,9 +848,9 @@ class MainActivity : Activity() {
         }
 
         content.addView(
-            createAppIcon(dp(54)),
-            LinearLayout.LayoutParams(dp(54), dp(54)).apply {
-                setMargins(0, 0, dp(12), 0)
+            createAppIcon(dp(48)),
+            LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                setMargins(0, 0, dp(8), 0)
             }
         )
 
@@ -854,7 +861,7 @@ class MainActivity : Activity() {
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = 16f
+            textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
@@ -864,7 +871,7 @@ class MainActivity : Activity() {
 
         val developer = TextView(this).apply {
             text = "Ryoo Jaesang & 최피디"
-            textSize = 13f
+            textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(245, 214, 107))
             setPadding(0, dp(5), 0, 0)
@@ -892,7 +899,7 @@ class MainActivity : Activity() {
         dialog.window?.setBackgroundDrawableResource(
             android.R.color.transparent
         )
-        dialog.window?.setLayout(dp(290), LinearLayout.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setLayout(dp(280), LinearLayout.LayoutParams.WRAP_CONTENT)
     }
 
     // --------------------------------------------------
@@ -1342,6 +1349,7 @@ class MainActivity : Activity() {
         playButton.text = "…"
         resetTimeDisplay()
         progressBar.reset()
+        resetChordDisplay()
 
         try {
             val uri = playlist[index]
@@ -1682,13 +1690,18 @@ class MainActivity : Activity() {
                             }
                             bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
                         }
+                        val detectedChord = ChordDetector.detect(fft, samplingRate)
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
                         val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
                         runOnUiThread {
                             analyzerView.setSpectrum(bars)
                             if (trackDuration > 0) {
                                 progressBar.recordSpectrum(playbackPosition, trackDuration, bars)
+                            } else {
+                                // 인터넷 방송은 전체 길이가 없으므로 최근 분석 기록을 왼쪽부터 누적합니다.
+                                progressBar.recordLiveSpectrum(bars)
                             }
+                            if (detectedChord != null) updateDetectedChord(detectedChord)
                         }
                     }
                 },
@@ -1701,6 +1714,31 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             analyzerView.setSpectrum(FloatArray(48))
         }
+    }
+
+    private fun updateDetectedChord(chord: String) {
+        if (candidateChord == chord) {
+            candidateChordFrames++
+        } else {
+            candidateChord = chord
+            candidateChordFrames = 1
+        }
+        // 순간적인 잡음으로 코드가 계속 바뀌지 않도록 같은 코드가 연속 검출될 때만 반영합니다.
+        if (candidateChordFrames >= 3 && displayedChord != chord) {
+            displayedChord = chord
+            if (chordSlots.size >= 5) {
+                chordSlots.forEachIndexed { index, slot ->
+                    slot.text = if (index == 2) chord else "—"
+                }
+            }
+        }
+    }
+
+    private fun resetChordDisplay() {
+        candidateChord = null
+        candidateChordFrames = 0
+        displayedChord = null
+        if (chordSlots.isNotEmpty()) chordSlots.forEach { it.text = "—" }
     }
 
     private fun releaseAudioVisualizer() {
