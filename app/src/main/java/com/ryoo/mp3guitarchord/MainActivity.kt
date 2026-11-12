@@ -28,6 +28,8 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.*
 import java.util.Locale
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : Activity() {
 
@@ -53,6 +55,7 @@ class MainActivity : Activity() {
     private val chordHistory = mutableListOf<String>()
     private lateinit var analyzerView: AudioVisualizerView
     private var audioVisualizer: Visualizer? = null
+    private var icyMetadataReader: IcyMetadataReader? = null
     private lateinit var playButton: Button
     private lateinit var shuffleButton: Button
     private lateinit var repeatButton: Button
@@ -149,9 +152,9 @@ class MainActivity : Activity() {
 
         // 기타 코드 글씨를 한 번 더 눈에 띄게 축소합니다.
         val chordFontSize = when {
-            isCompact -> 12f
-            isTablet -> 15f
-            else -> 13f
+            isCompact -> 9f
+            isTablet -> 12f
+            else -> 10f
         }
 
         val root = LinearLayout(this).apply {
@@ -1467,6 +1470,9 @@ class MainActivity : Activity() {
                 // 일부 기기에서 FFT 데이터가 안정적으로 전달됩니다.
                 prepared.start()
                 attachAudioVisualizer(prepared.audioSessionId)
+                if (isStream) {
+                    startIcyMetadataReader(uri.toString(), prepared)
+                }
                 playButton.text = "Ⅱ"
             }
 
@@ -1742,6 +1748,20 @@ class MainActivity : Activity() {
         ).show()
     }
 
+    private fun startIcyMetadataReader(streamUrl: String, expectedPlayer: MediaPlayer) {
+        icyMetadataReader?.stop()
+        val reader = IcyMetadataReader(streamUrl) { title ->
+            runOnUiThread {
+                if (player !== expectedPlayer || currentIndex !in songNames.indices) return@runOnUiThread
+                setScrollingSongTitle(title)
+                songNames[currentIndex] = title
+                adapter.notifyDataSetChanged()
+            }
+        }
+        icyMetadataReader = reader
+        reader.start()
+    }
+
     private fun attachAudioVisualizer(audioSessionId: Int) {
         releaseAudioVisualizer()
 
@@ -1823,7 +1843,7 @@ class MainActivity : Activity() {
         }
 
         // 순간적인 잡음으로 코드가 계속 바뀌지 않도록 같은 코드가 연속 검출될 때만 반영합니다.
-        if (candidateChordFrames >= 3 && displayedChord != chord) {
+        if (candidateChordFrames >= 2 && displayedChord != chord) {
             displayedChord = chord
 
             // 같은 코드가 연속 검출되면 한 번만 기록하고, 새 코드가 나오면 오른쪽에 추가합니다.
@@ -1832,12 +1852,12 @@ class MainActivity : Activity() {
                 if (chordHistory.size > 5) {
                     chordHistory.removeAt(0)
                 }
-                renderChordHistory()
+                renderChordHistory(animate = true)
             }
         }
     }
 
-    private fun renderChordHistory() {
+    private fun renderChordHistory(animate: Boolean = false) {
         if (chordSlots.size < 5) return
 
         val firstVisibleSlot = 5 - chordHistory.size
@@ -1847,11 +1867,8 @@ class MainActivity : Activity() {
             slot.text = if (hasChord) chordHistory[historyIndex] else "—"
 
             val isLatestChord = hasChord && index == 4
-            slot.textSize = if (isLatestChord) {
-                slot.textSize * 1.0f
-            } else {
-                slot.textSize
-            }
+            // TextView.textSize getter returns px, while its setter expects sp.
+            // Do not reassign it here: doing so made the font grow after each update.
             slot.setTextColor(
                 when {
                     isLatestChord -> Color.rgb(85, 213, 255)
@@ -1860,6 +1877,13 @@ class MainActivity : Activity() {
                 }
             )
             slot.alpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
+            if (animate) {
+                slot.animate().cancel()
+                slot.translationX = dp(16).toFloat()
+                slot.animate().translationX(0f).setDuration(200L).start()
+            } else {
+                slot.translationX = 0f
+            }
         }
     }
 
@@ -1916,6 +1940,8 @@ class MainActivity : Activity() {
 
     private fun releaseCurrentPlayer() {
 
+        icyMetadataReader?.stop()
+        icyMetadataReader = null
         releaseAudioVisualizer()
         isPrepared = false
 
@@ -1954,5 +1980,89 @@ class MainActivity : Activity() {
         releaseCurrentPlayer()
 
         super.onDestroy()
+    }
+}
+
+
+/**
+ * Reads ICY StreamTitle metadata from a parallel HTTP connection.
+ * The audio itself continues to be played by MediaPlayer.
+ */
+private class IcyMetadataReader(
+    private val streamUrl: String,
+    private val onTitle: (String) -> Unit
+) {
+    @Volatile private var running = false
+    @Volatile private var connection: HttpURLConnection? = null
+    private var worker: Thread? = null
+
+    fun start() {
+        if (running) return
+        running = true
+        worker = Thread({
+            var localConnection: HttpURLConnection? = null
+            try {
+                localConnection = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10000
+                    readTimeout = 30000
+                    instanceFollowRedirects = true
+                    setRequestProperty("Icy-MetaData", "1")
+                    setRequestProperty("User-Agent", "EasyMP3GuitarChord/1.5")
+                }
+                connection = localConnection
+                localConnection.connect()
+                val interval = localConnection.getHeaderField("icy-metaint")?.toIntOrNull()
+                    ?: localConnection.getHeaderField("Icy-MetaInt")?.toIntOrNull()
+                    ?: return@Thread
+                if (interval <= 0) return@Thread
+
+                localConnection.inputStream.use { input ->
+                    val audioBuffer = ByteArray(8192)
+                    while (running) {
+                        if (!readFully(input, audioBuffer, interval)) break
+                        val lengthByte = input.read()
+                        if (lengthByte < 0) break
+                        val metadataLength = lengthByte * 16
+                        if (metadataLength <= 0) continue
+                        val metadata = ByteArray(metadataLength)
+                        if (!readFully(input, metadata, metadataLength)) break
+                        val raw = metadata.toString(Charsets.UTF_8)
+                            .trim('\u0000', ' ', '\r', '\n', '\t')
+                        if (raw.isEmpty()) continue
+                        val match = Regex("(?i)StreamTitle\\s*=\\s*['\\\"]([^'\\\"]*)['\\\"]")
+                            .find(raw)
+                        val title = match?.groupValues?.getOrNull(1)?.trim().orEmpty()
+                        if (title.isNotEmpty()) onTitle(title)
+                    }
+                }
+            } catch (_: Exception) {
+                // Metadata is optional; playback continues if the station does not provide it.
+            } finally {
+                running = false
+                try { localConnection?.disconnect() } catch (_: Exception) { }
+                if (connection === localConnection) connection = null
+            }
+        }, "ICY-Metadata-Reader").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun readFully(input: java.io.InputStream, buffer: ByteArray, count: Int): Boolean {
+        var offset = 0
+        while (offset < count && running) {
+            val read = input.read(buffer, offset, minOf(buffer.size, count - offset))
+            if (read < 0) return false
+            offset += read
+        }
+        return offset == count
+    }
+
+    fun stop() {
+        running = false
+        try { connection?.disconnect() } catch (_: Exception) { }
+        connection = null
+        worker?.interrupt()
+        worker = null
     }
 }
