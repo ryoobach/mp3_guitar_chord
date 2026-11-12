@@ -40,10 +40,25 @@ jobs:
       - name: Build APK
         run: gradle assembleDebug --stacktrace
 
+      - name: Add version to APK filename
+        id: version
+        shell: bash
+        run: |
+          VERSION_NAME=$(sed -nE 's/.*versionName = "([^"]+)".*/\\1/p' app/build.gradle.kts | head -n 1)
+          if [ -z "$VERSION_NAME" ]; then
+            echo "Could not read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          APK_SOURCE="app/build/outputs/apk/debug/app-debug.apk"
+          APK_TARGET="app/build/outputs/apk/debug/Easy-MP3-Guitar-Chord-v${VERSION_NAME}.apk"
+          test -f "$APK_SOURCE"
+          mv "$APK_SOURCE" "$APK_TARGET"
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Easy-MP3-Guitar-Chord-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: Easy-MP3-Guitar-Chord-v${{ steps.version.outputs.name }}
+          path: app/build/outputs/apk/debug/Easy-MP3-Guitar-Chord-v*.apk
           if-no-files-found: error
           retention-days: 14
