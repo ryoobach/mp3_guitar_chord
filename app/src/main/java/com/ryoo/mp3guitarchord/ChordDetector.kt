@@ -34,7 +34,7 @@ object ChordDetector {
         val maximum = chroma.maxOrNull() ?: 0.0
         if (total <= 0.0 || maximum <= 0.0) return null
         val activeNotes = chroma.count { it >= maximum * 0.16 }
-        if (activeNotes < 3) return null
+        if (activeNotes < 2) return null
 
         var bestName: String? = null
         var bestScore = 0.0
@@ -50,6 +50,6 @@ object ChordDetector {
                 }
             }
         }
-        return if (bestScore >= 0.58) bestName else null
+        return if (bestScore >= 0.42) bestName else null
     }
 }
