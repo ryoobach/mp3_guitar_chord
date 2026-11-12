@@ -1465,7 +1465,7 @@ class MainActivity : Activity() {
                 }
 
                 mp.seekTo(0)
-                progressBar.progress = 0
+                progressBar.setPosition(0)
                 updateTimeDisplay(0, mp.duration)
                 playButton.text = "▶"
 
@@ -1492,7 +1492,7 @@ class MainActivity : Activity() {
             playTrack(0)
         } else {
             playButton.text = "▶"
-            progressBar.progress = 0
+            progressBar.setPosition(0)
         }
     }
 
@@ -1612,7 +1612,7 @@ class MainActivity : Activity() {
 
             playButton.text = "▶"
             resetTimeDisplay()
-            progressBar.progress = 0
+            progressBar.setPosition(0)
             setScrollingSongTitle("")
         }
 
