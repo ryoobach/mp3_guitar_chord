@@ -14,6 +14,7 @@ import android.provider.OpenableColumns
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
+import android.view.View
 import android.widget.*
 import java.util.Locale
 
@@ -26,9 +27,7 @@ class MainActivity : Activity() {
     private var currentIndex = -1
     private var isPrepared = false
     private var isSeeking = false
-
     private var shuffleMode = false
-    // 0: 반복 끔, 1: 전체 반복, 2: 한 곡 반복
     private var repeatMode = 0
 
     private lateinit var timeText: TextView
@@ -45,18 +44,24 @@ class MainActivity : Activity() {
 
     private val updateTask = object : Runnable {
         override fun run() {
-            if (player != null && isPrepared) {
+            val mp = player
+            if (mp != null && isPrepared) {
                 try {
-                    val position = player!!.currentPosition
-                    val duration = player!!.duration
+                    val duration = mp.duration
+                    val position = mp.currentPosition
 
-                    if (!isSeeking) {
-                        progressBar.max = duration.coerceAtLeast(1)
-                        progressBar.progress = position
+                    if (duration > 0) {
+                        if (!isSeeking) {
+                            progressBar.visibility = View.VISIBLE
+                            progressBar.max = duration
+                            progressBar.progress = position
+                        }
+                        timeText.text =
+                            "${formatTime(position)} / ${formatTime(duration)}"
+                    } else {
+                        progressBar.visibility = View.GONE
+                        timeText.text = "${formatTime(position)} / LIVE"
                     }
-
-                    timeText.text =
-                        "${formatTime(position)} / ${formatTime(duration)}"
                 } catch (_: Exception) {
                 }
             }
@@ -113,7 +118,6 @@ class MainActivity : Activity() {
             progress = 80
             progressTintList = colorList(Color.YELLOW)
             thumbTintList = colorList(Color.YELLOW)
-
             setOnSeekBarChangeListener(object :
                 SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(
@@ -122,7 +126,6 @@ class MainActivity : Activity() {
                     val volume = value / 100f
                     player?.setVolume(volume, volume)
                 }
-
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
             })
@@ -142,13 +145,13 @@ class MainActivity : Activity() {
                             "${formatTime(value)} / ${formatTime(player?.duration ?: 0)}"
                     }
                 }
-
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     isSeeking = true
                 }
-
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    if (isPrepared) player?.seekTo(seekBar?.progress ?: 0)
+                    if (isPrepared && (player?.duration ?: 0) > 0) {
+                        player?.seekTo(seekBar?.progress ?: 0)
+                    }
                     isSeeking = false
                 }
             })
@@ -172,7 +175,6 @@ class MainActivity : Activity() {
         controls.addView(next, buttonParams())
         root.addView(controls)
 
-        // 재생 방식 토글
         val modeRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER
         }
@@ -207,7 +209,6 @@ class MainActivity : Activity() {
             choiceMode = ListView.CHOICE_MODE_MULTIPLE
             setBackgroundColor(Color.rgb(24, 31, 43))
             setCacheColorHint(Color.TRANSPARENT)
-
             setOnItemClickListener { _, _, position, _ ->
                 playTrack(position)
             }
@@ -237,7 +238,7 @@ class MainActivity : Activity() {
         val remove = makeButton("REM")
         val select = makeButton("SEL")
 
-        add.setOnClickListener { openFilePicker() }
+        add.setOnClickListener { showAddMenu() }
         remove.setOnClickListener { removeSelected() }
         select.setOnClickListener { showSelectionMenu() }
 
@@ -259,10 +260,80 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
+    private fun showAddMenu() {
+        val options = arrayOf("MP3 파일 추가", "인터넷 방송 주소 추가")
+        AlertDialog.Builder(this)
+            .setTitle("재생목록 추가")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> openFilePicker()
+                    1 -> showUrlDialog()
+                }
+            }
+            .show()
+    }
+
+    private fun showUrlDialog() {
+        val input = EditText(this).apply {
+            hint = "https://example.com/radio.mp3"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("인터넷 방송 주소")
+            .setMessage("방송 URL을 입력하거나 붙여넣으세요.")
+            .setView(input)
+            .setPositiveButton("추가") { _, _ ->
+                addStream(input.text.toString().trim())
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun addStream(address: String) {
+        if (address.isBlank()) {
+            Toast.makeText(this, "방송 주소를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val uri = try {
+            Uri.parse(address)
+        } catch (_: Exception) {
+            null
+        }
+
+        if (uri == null ||
+            (uri.scheme != "http" && uri.scheme != "https") ||
+            uri.host.isNullOrBlank()
+        ) {
+            Toast.makeText(this, "올바른 HTTP 또는 HTTPS 주소가 아닙니다.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        if (playlist.contains(uri)) {
+            Toast.makeText(this, "이미 재생목록에 있습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        playlist.add(uri)
+        val displayName = uri.host ?: "인터넷 방송"
+        songNames.add("RADIO | $displayName")
+
+        adapter.notifyDataSetChanged()
+
+        if (currentIndex == -1) {
+            currentIndex = 0
+            playlistView.setItemChecked(0, true)
+        }
+
+        Toast.makeText(this, "인터넷 방송을 추가했습니다.", Toast.LENGTH_SHORT).show()
+    }
+
     private fun updateModeButtons() {
         shuffleButton.text =
             if (shuffleMode) "SHUFFLE ON" else "SHUFFLE OFF"
-
         shuffleButton.setTextColor(
             if (shuffleMode) Color.YELLOW else Color.WHITE
         )
@@ -384,10 +455,14 @@ class MainActivity : Activity() {
         currentIndex = index
         playlistView.setItemChecked(index, true)
         playButton.text = "…"
-        timeText.text = "00:00 / 00:00"
+        timeText.text = "연결 중..."
         progressBar.progress = 0
+        progressBar.visibility = View.VISIBLE
 
         try {
+            val uri = playlist[index]
+            val isStream = uri.scheme == "http" || uri.scheme == "https"
+
             val mp = MediaPlayer()
             player = mp
             isPrepared = false
@@ -399,7 +474,11 @@ class MainActivity : Activity() {
                     .build()
             )
 
-            mp.setDataSource(this, playlist[index])
+            if (isStream) {
+                mp.setDataSource(uri.toString())
+            } else {
+                mp.setDataSource(this, uri)
+            }
 
             mp.setOnPreparedListener { prepared ->
                 if (player !== prepared) return@setOnPreparedListener
@@ -407,7 +486,17 @@ class MainActivity : Activity() {
                 isPrepared = true
                 val volume = volumeBar.progress / 100f
                 prepared.setVolume(volume, volume)
-                progressBar.max = prepared.duration.coerceAtLeast(1)
+
+                if (prepared.duration > 0) {
+                    progressBar.visibility = View.VISIBLE
+                    progressBar.max = prepared.duration
+                    timeText.text =
+                        "00:00 / ${formatTime(prepared.duration)}"
+                } else {
+                    progressBar.visibility = View.GONE
+                    timeText.text = "LIVE"
+                }
+
                 prepared.start()
                 playButton.text = "Ⅱ"
             }
@@ -421,8 +510,8 @@ class MainActivity : Activity() {
                 playButton.text = "▶"
                 Toast.makeText(
                     this,
-                    "파일 재생 오류",
-                    Toast.LENGTH_SHORT
+                    "재생할 수 없는 주소 또는 파일입니다.",
+                    Toast.LENGTH_LONG
                 ).show()
                 true
             }
@@ -432,14 +521,13 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             releaseCurrentPlayer()
             playButton.text = "▶"
-            Toast.makeText(this, "재생할 수 없는 파일입니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "재생을 시작할 수 없습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun handleTrackCompletion() {
         if (repeatMode == 2) {
-            player?.seekTo(0)
-            player?.start()
+            playTrack(currentIndex)
             return
         }
 
@@ -455,8 +543,6 @@ class MainActivity : Activity() {
         } else {
             playButton.text = "▶"
             progressBar.progress = 0
-            timeText.text =
-                "${formatTime(player?.duration ?: 0)} / ${formatTime(player?.duration ?: 0)}"
         }
     }
 
@@ -469,7 +555,7 @@ class MainActivity : Activity() {
             } else if (playlist.isNotEmpty()) {
                 playTrack(0)
             } else {
-                Toast.makeText(this, "먼저 MP3 파일을 추가해 주세요.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "먼저 파일이나 방송을 추가해 주세요.", Toast.LENGTH_SHORT).show()
             }
             return
         }
@@ -552,7 +638,7 @@ class MainActivity : Activity() {
         }
 
         if (removeIndexes.isEmpty()) {
-            Toast.makeText(this, "삭제할 곡을 선택해 주세요.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "삭제할 항목을 선택해 주세요.", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -581,7 +667,7 @@ class MainActivity : Activity() {
 
         Toast.makeText(
             this,
-            "${removeIndexes.size}개 곡을 삭제했습니다.",
+            "${removeIndexes.size}개 항목을 삭제했습니다.",
             Toast.LENGTH_SHORT
         ).show()
     }
