@@ -53,6 +53,11 @@ class MainActivity : Activity() {
     private var candidateChordFrames = 0
     private var displayedChord: String? = null
     private val chordHistory = mutableListOf<String>()
+    private data class LyricLine(val timeMs: Int, val text: String)
+    private var currentLyrics: List<LyricLine> = emptyList()
+    private var currentLyricTrackKey: String? = null
+    private lateinit var currentLyricText: TextView
+    private lateinit var nextLyricText: TextView
     private lateinit var analyzerView: AudioVisualizerView
     private var audioVisualizer: Visualizer? = null
     private var icyMetadataReader: IcyMetadataReader? = null
@@ -85,6 +90,7 @@ class MainActivity : Activity() {
                         }
                         updateTimeDisplay(position, duration)
                         updateProgressPercent(position, duration)
+                        updateLyrics(position)
                     }
                 } catch (_: Exception) {
                 }
@@ -139,9 +145,9 @@ class MainActivity : Activity() {
         val isCompact = heightDp < 650 || widthDp < 360
 
         val panelHeight = when {
-            isCompact -> 108
-            isTablet -> 158
-            else -> 132
+            isCompact -> 126
+            isTablet -> 174
+            else -> 150
         }
 
         val timeFontSize = when {
@@ -379,6 +385,57 @@ class MainActivity : Activity() {
             chordRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(if (isCompact) 22 else 27)
+            )
+        )
+
+        // 현재 가사와 다음 가사를 코드 바로 아래에 표시합니다.
+        val lyricsArea = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(2), dp(1), dp(2), dp(1))
+        }
+
+        currentLyricText = TextView(this).apply {
+            text = "가사 파일을 연결해 주세요"
+            textSize = if (isCompact) 10f else 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(255, 224, 130))
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            includeFontPadding = false
+        }
+        nextLyricText = TextView(this).apply {
+            text = ""
+            textSize = if (isCompact) 8f else 10f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(155, 178, 198))
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            includeFontPadding = false
+        }
+
+        lyricsArea.addView(
+            currentLyricText,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        lyricsArea.addView(
+            nextLyricText,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                0.8f
+            )
+        )
+        chordArea.addView(
+            lyricsArea,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
                 1f
             )
@@ -433,8 +490,10 @@ class MainActivity : Activity() {
             volumeRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(if (isCompact) 30 else 36)
-            )
+                dp(if (isCompact) 26 else 30)
+            ).apply {
+                topMargin = dp(4)
+            }
         )
 
         upperArea.addView(
@@ -1174,7 +1233,8 @@ class MainActivity : Activity() {
 
         val options = arrayOf(
             "MP3 파일 추가",
-            "인터넷 방송 주소 추가"
+            "인터넷 방송 주소 추가",
+            "현재 곡에 가사 파일 연결"
         )
 
         AlertDialog.Builder(this)
@@ -1183,9 +1243,105 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> openFilePicker()
                     1 -> showUrlDialog()
+                    2 -> openLyricsPicker()
                 }
             }
             .show()
+    }
+
+    private fun openLyricsPicker() {
+        if (currentIndex !in playlist.indices) {
+            Toast.makeText(this, "먼저 가사를 연결할 곡을 선택해 주세요.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (playlist[currentIndex].scheme == "http" || playlist[currentIndex].scheme == "https") {
+            // 인터넷 방송에도 사용자가 가진 LRC 파일을 연결할 수 있습니다.
+        }
+
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        startActivityForResult(intent, 101)
+    }
+
+    private fun lyricsPreferenceKey(trackUri: Uri): String =
+        "lyrics:${trackUri}"
+
+    private fun parseLyrics(raw: String): List<LyricLine> {
+        val result = mutableListOf<LyricLine>()
+        val timestampPattern = Regex("\\[(\\d{1,2}):(\\d{2})(?:[.:](\\d{1,3}))?\\]")
+
+        raw.lineSequence().forEach { sourceLine ->
+            val matches = timestampPattern.findAll(sourceLine).toList()
+            if (matches.isEmpty()) return@forEach
+
+            val lyric = timestampPattern.replace(sourceLine, "").trim()
+            if (lyric.isEmpty()) return@forEach
+
+            matches.forEach { match ->
+                val minutes = match.groupValues[1].toIntOrNull() ?: 0
+                val seconds = match.groupValues[2].toIntOrNull() ?: 0
+                val fractionText = match.groupValues[3]
+                val milliseconds = if (fractionText.isEmpty()) {
+                    0
+                } else {
+                    fractionText.padEnd(3, '0').take(3).toIntOrNull() ?: 0
+                }
+                result.add(
+                    LyricLine(
+                        minutes * 60_000 + seconds * 1_000 + milliseconds,
+                        lyric
+                    )
+                )
+            }
+        }
+        return result.sortedBy { it.timeMs }
+    }
+
+    private fun loadLyricsForCurrentTrack() {
+        if (currentIndex !in playlist.indices) {
+            currentLyrics = emptyList()
+            currentLyricTrackKey = null
+            updateLyrics(0)
+            return
+        }
+        val uri = playlist[currentIndex]
+        currentLyricTrackKey = lyricsPreferenceKey(uri)
+        val raw = getSharedPreferences("player_lyrics", MODE_PRIVATE)
+            .getString(currentLyricTrackKey, null)
+        currentLyrics = raw?.let { parseLyrics(it) } ?: emptyList()
+        updateLyrics(0)
+    }
+
+    private fun updateLyrics(positionMs: Int) {
+        if (!::currentLyricText.isInitialized || !::nextLyricText.isInitialized) return
+        if (currentLyrics.isEmpty()) {
+            currentLyricText.text = if (currentIndex in playlist.indices) {
+                "가사 파일을 연결해 주세요"
+            } else {
+                ""
+            }
+            nextLyricText.text = ""
+            return
+        }
+
+        var currentIndexInLyrics = -1
+        for (i in currentLyrics.indices) {
+            if (currentLyrics[i].timeMs <= positionMs) {
+                currentIndexInLyrics = i
+            } else {
+                break
+            }
+        }
+
+        if (currentIndexInLyrics < 0) {
+            currentLyricText.text = "♪"
+            nextLyricText.text = currentLyrics.firstOrNull()?.text.orEmpty()
+        } else {
+            currentLyricText.text = currentLyrics[currentIndexInLyrics].text
+            nextLyricText.text = currentLyrics.getOrNull(currentIndexInLyrics + 1)?.text.orEmpty()
+        }
     }
 
     private fun showUrlDialog() {
@@ -1320,6 +1476,50 @@ class MainActivity : Activity() {
 
         super.onActivityResult(requestCode, resultCode, data)
 
+        if (requestCode == 101) {
+            if (resultCode != RESULT_OK || data?.data == null) return
+            val lyricUri = data.data!!
+            try {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        lyricUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {
+                }
+
+                val rawLyrics = contentResolver.openInputStream(lyricUri)
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+                    .orEmpty()
+                val parsed = parseLyrics(rawLyrics)
+                if (parsed.isEmpty()) {
+                    Toast.makeText(
+                        this,
+                        "시간 정보가 있는 LRC 가사 파일이 아닙니다.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+
+                val trackUri = playlist[currentIndex]
+                getSharedPreferences("player_lyrics", MODE_PRIVATE).edit()
+                    .putString(lyricsPreferenceKey(trackUri), rawLyrics)
+                    .apply()
+                currentLyrics = parsed
+                currentLyricTrackKey = lyricsPreferenceKey(trackUri)
+                updateLyrics(player?.currentPosition ?: 0)
+                Toast.makeText(
+                    this,
+                    "가사를 연결했습니다. (${parsed.size}줄)",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (_: Exception) {
+                Toast.makeText(this, "가사 파일을 읽지 못했습니다.", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+
         if (requestCode != 100 ||
             resultCode != RESULT_OK ||
             data == null
@@ -1421,6 +1621,7 @@ class MainActivity : Activity() {
         resetTimeDisplay()
         progressBar.reset()
         resetChordDisplay()
+        loadLyricsForCurrentTrack()
 
         try {
             val uri = playlist[index]
@@ -1552,6 +1753,7 @@ class MainActivity : Activity() {
                 mp.seekTo(0)
                 progressBar.setPosition(0)
                 updateTimeDisplay(0, mp.duration)
+                updateLyrics(0)
                 playButton.text = "▶"
 
             } catch (_: Exception) {
@@ -1711,6 +1913,8 @@ class MainActivity : Activity() {
             resetTimeDisplay()
             progressBar.reset()
             resetChordDisplay()
+            currentLyrics = emptyList()
+            updateLyrics(0)
             setScrollingSongTitle("")
         }
 
