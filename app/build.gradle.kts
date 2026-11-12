@@ -12,8 +12,8 @@ android {
         applicationId = "com.ryoo.mp3guitarchord"
         minSdk = 23
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.52"
+        versionCode = 10
+        versionName = "1.53"
     }
 
     signingConfigs {
