@@ -12,6 +12,11 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -152,15 +157,19 @@ class MainActivity : Activity() {
         }
 
         topBar.addView(
-            createAppIcon(dp(32)),
-            LinearLayout.LayoutParams(dp(32), dp(32)).apply {
-                setMargins(0, 0, dp(6), 0)
+            createAppIcon(dp(42)),
+            LinearLayout.LayoutParams(dp(42), dp(42)).apply {
+                setMargins(0, 0, dp(8), 0)
             }
         )
 
         val topTitle = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = if (isCompact) 11f else 13f
+            textSize = when {
+                isCompact -> 18f
+                isTablet -> 23f
+                else -> 21f
+            }
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
@@ -173,7 +182,7 @@ class MainActivity : Activity() {
         )
 
         val homeButton = makeButton("⌂").apply {
-            textSize = 20f
+            textSize = 13f
             contentDescription = "홈 화면으로 이동"
             setOnClickListener {
                 moveTaskToBack(true)
@@ -181,7 +190,7 @@ class MainActivity : Activity() {
         }
 
         val developerButton = makeButton("ⓘ").apply {
-            textSize = 18f
+            textSize = 13f
             contentDescription = "개발자 정보"
             setOnClickListener {
                 showDeveloperInfo()
@@ -189,7 +198,7 @@ class MainActivity : Activity() {
         }
 
         val exitButton = makeButton("×").apply {
-            textSize = 23f
+            textSize = 15f
             contentDescription = "앱 종료"
             setOnClickListener {
                 releaseCurrentPlayer()
@@ -205,7 +214,7 @@ class MainActivity : Activity() {
             topBar,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(if (isCompact) 38 else 42)
+                dp(if (isCompact) 46 else 50)
             )
         )
 
@@ -665,23 +674,90 @@ class MainActivity : Activity() {
 
     private fun createAppIcon(size: Int): ImageView {
 
+        val bitmap = Bitmap.createBitmap(
+            108,
+            108,
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Fender Stratocaster의 더블 컷어웨이 바디와 긴 넥을
+        // 참고한 오리지널 기타 실루엣입니다.
+        paint.color = Color.rgb(8, 15, 27)
+        canvas.drawRoundRect(
+            RectF(1f, 1f, 107f, 107f),
+            19f,
+            19f,
+            paint
+        )
+
+        val neck = Path().apply {
+            moveTo(57f, 17f)
+            lineTo(66f, 13f)
+            lineTo(72f, 51f)
+            lineTo(65f, 57f)
+            lineTo(55f, 52f)
+            close()
+        }
+        paint.color = Color.rgb(35, 190, 235)
+        canvas.drawPath(neck, paint)
+
+        val head = Path().apply {
+            moveTo(56f, 16f)
+            lineTo(57f, 7f)
+            lineTo(73f, 5f)
+            lineTo(78f, 13f)
+            lineTo(68f, 20f)
+            close()
+        }
+        paint.color = Color.rgb(235, 190, 112)
+        canvas.drawPath(head, paint)
+
+        val body = Path().apply {
+            moveTo(55f, 45f)
+            cubicTo(47f, 40f, 38f, 43f, 34f, 51f)
+            cubicTo(30f, 57f, 34f, 63f, 29f, 70f)
+            cubicTo(24f, 79f, 31f, 89f, 42f, 89f)
+            cubicTo(49f, 89f, 52f, 85f, 57f, 82f)
+            cubicTo(63f, 87f, 71f, 87f, 76f, 80f)
+            cubicTo(81f, 73f, 76f, 66f, 73f, 61f)
+            cubicTo(78f, 53f, 70f, 44f, 61f, 44f)
+            close()
+        }
+        paint.color = Color.rgb(220, 65, 58)
+        canvas.drawPath(body, paint)
+
+        paint.color = Color.rgb(245, 225, 190)
+        paint.strokeWidth = 1.2f
+        canvas.drawLine(59f, 19f, 55f, 73f, paint)
+        canvas.drawLine(62f, 18f, 59f, 73f, paint)
+
+        paint.color = Color.rgb(245, 214, 107)
+        canvas.drawRoundRect(
+            RectF(43f, 57f, 66f, 67f),
+            2f,
+            2f,
+            paint
+        )
+
+        paint.color = Color.rgb(8, 15, 27)
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = Typeface.create(
+            Typeface.DEFAULT,
+            Typeface.BOLD
+        )
+        paint.textSize = 5.2f
+        canvas.drawText("Easy MP3", 54.5f, 75f, paint)
+        paint.textSize = 4.7f
+        canvas.drawText("Guitar Chord", 54.5f, 81f, paint)
+
         return ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-
-            try {
-                setImageDrawable(
-                    packageManager.getApplicationIcon(packageName)
-                )
-            } catch (_: Exception) {
-                setImageDrawable(
-                    roundedBackground(
-                        Color.rgb(18, 60, 97),
-                        Color.rgb(85, 213, 255)
-                    )
-                )
-            }
-
-            contentDescription = "Easy MP3 Guitar Chord 앱 아이콘"
+            setImageBitmap(
+                Bitmap.createScaledBitmap(bitmap, size, size, true)
+            )
+            contentDescription = "스트라토캐스터 기타 모양의 Easy MP3 Guitar Chord 앱 로고"
         }
     }
 
@@ -885,7 +961,7 @@ class MainActivity : Activity() {
     }
 
     private fun topButtonParams(isCompact: Boolean): LinearLayout.LayoutParams {
-        val size = if (isCompact) 34 else 38
+        val size = if (isCompact) 28 else 30
 
         return LinearLayout.LayoutParams(dp(size), dp(size - 2)).apply {
             setMargins(dp(2), 0, dp(2), 0)
