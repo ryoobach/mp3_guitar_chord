@@ -40,6 +40,8 @@ class MainActivity : Activity() {
     private var isSeeking = false
     private var shuffleMode = false
     private var repeatMode = 0
+    private var selectionMode = false
+    private val selectedPlaylistItems = mutableSetOf<Int>()
 
     private lateinit var elapsedTimeText: TextView
     private lateinit var totalTimeText: TextView
@@ -58,6 +60,7 @@ class MainActivity : Activity() {
     private lateinit var volumeValueText: TextView
     private lateinit var playlistView: ListView
     private lateinit var adapter: ArrayAdapter<String>
+    private lateinit var selectButton: Button
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -554,7 +557,8 @@ class MainActivity : Activity() {
         )
 
         playlistView = ListView(this).apply {
-            choiceMode = ListView.CHOICE_MODE_MULTIPLE
+            // 체크박스는 평상시 표시하지 않고, SEL 모드에서 행 전체를 선택 표시합니다.
+            choiceMode = ListView.CHOICE_MODE_NONE
             setBackgroundColor(Color.rgb(16, 31, 50))
             setCacheColorHint(Color.TRANSPARENT)
             divider = android.graphics.drawable.ColorDrawable(
@@ -563,13 +567,20 @@ class MainActivity : Activity() {
             dividerHeight = dp(1)
 
             setOnItemClickListener { _, _, position, _ ->
-                playTrack(position)
+                if (selectionMode) {
+                    if (!selectedPlaylistItems.add(position)) {
+                        selectedPlaylistItems.remove(position)
+                    }
+                    adapter.notifyDataSetChanged()
+                } else {
+                    playTrack(position)
+                }
             }
         }
 
         adapter = object : ArrayAdapter<String>(
             this,
-            android.R.layout.simple_list_item_multiple_choice,
+            android.R.layout.simple_list_item_1,
             songNames
         ) {
             override fun getView(
@@ -577,19 +588,36 @@ class MainActivity : Activity() {
                 convertView: View?,
                 parent: android.view.ViewGroup
             ): View {
-                val item = super.getView(position, convertView, parent)
-                val label = item.findViewById<CheckedTextView>(android.R.id.text1)
+                val label = (super.getView(position, convertView, parent) as TextView)
+                val isSelected = position in selectedPlaylistItems
+                val isCurrentTrack = position == currentIndex && player != null
 
-                // 앱의 짙은 남색 목록 배경에서도 곡 제목이 확실히 보이도록
-                // 기본 테마의 검은색 글자 대신 밝은 글자색을 지정합니다.
-                label.setTextColor(Color.rgb(245, 245, 245))
+                label.text = songNames[position]
                 label.textSize = 14f
+                label.typeface = if (isSelected || isCurrentTrack) {
+                    Typeface.DEFAULT_BOLD
+                } else {
+                    Typeface.DEFAULT
+                }
                 label.setPadding(dp(12), dp(9), dp(8), dp(9))
-                label.checkMarkTintList =
-                    colorList(Color.rgb(85, 213, 255))
-                item.setBackgroundColor(Color.rgb(16, 31, 50))
 
-                return item
+                // 현재 재생 곡은 청록색, SEL 모드에서 고른 곡은 금색으로 구분합니다.
+                label.setTextColor(
+                    when {
+                        isSelected -> Color.rgb(255, 220, 115)
+                        isCurrentTrack -> Color.rgb(85, 213, 255)
+                        else -> Color.rgb(245, 245, 245)
+                    }
+                )
+                label.setBackgroundColor(
+                    when {
+                        isSelected -> Color.rgb(83, 66, 31)
+                        isCurrentTrack -> Color.rgb(22, 61, 83)
+                        else -> Color.rgb(16, 31, 50)
+                    }
+                )
+
+                return label
             }
         }
 
@@ -627,7 +655,7 @@ class MainActivity : Activity() {
 
         val add = makeButton("ADD")
         val remove = makeButton("REM")
-        val select = makeButton("SEL")
+        selectButton = makeButton("SEL")
 
         add.setOnClickListener {
             showAddMenu()
@@ -637,8 +665,8 @@ class MainActivity : Activity() {
             removeSelected()
         }
 
-        select.setOnClickListener {
-            showSelectionMenu()
+        selectButton.setOnClickListener {
+            toggleSelectionMode()
         }
 
         val bottomButtonWidth = when {
@@ -658,7 +686,7 @@ class MainActivity : Activity() {
         )
 
         bottomRow.addView(
-            select,
+            selectButton,
             bottomButtonParams(bottomButtonWidth)
         )
 
@@ -1187,7 +1215,7 @@ class MainActivity : Activity() {
         if (currentIndex == -1) {
             currentIndex = 0
             setScrollingSongTitle(songNames[0])
-            playlistView.setItemChecked(0, true)
+            adapter.notifyDataSetChanged()
         }
 
         Toast.makeText(
@@ -1284,7 +1312,7 @@ class MainActivity : Activity() {
             if (currentIndex == -1 && playlist.isNotEmpty()) {
                 currentIndex = 0
                 setScrollingSongTitle(songNames[0])
-                playlistView.setItemChecked(0, true)
+                adapter.notifyDataSetChanged()
             }
 
             Toast.makeText(
@@ -1344,8 +1372,6 @@ class MainActivity : Activity() {
         currentIndex = index
         setScrollingSongTitle(songNames[index])
 
-        playlistView.setItemChecked(index, true)
-
         playButton.text = "…"
         resetTimeDisplay()
         progressBar.reset()
@@ -1360,6 +1386,7 @@ class MainActivity : Activity() {
             val mp = MediaPlayer()
             player = mp
             isPrepared = false
+            adapter.notifyDataSetChanged()
 
             mp.setAudioAttributes(
                 AudioAttributes.Builder()
@@ -1563,50 +1590,48 @@ class MainActivity : Activity() {
     // 플레이리스트 선택 / 삭제
     // --------------------------------------------------
 
-    private fun showSelectionMenu() {
+    private fun toggleSelectionMode() {
+        selectionMode = !selectionMode
+        selectedPlaylistItems.clear()
 
-        val options = arrayOf(
-            "전체 선택",
-            "전체 선택 해제"
+        selectButton.setTextColor(
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE
+        )
+        selectButton.background = roundedBackground(
+            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
         )
 
-        AlertDialog.Builder(this)
-            .setTitle("재생목록 선택")
-            .setItems(options) { _, which ->
+        adapter.notifyDataSetChanged()
 
-                when (which) {
-
-                    0 -> {
-                        for (i in songNames.indices) {
-                            playlistView.setItemChecked(i, true)
-                        }
-                    }
-
-                    1 -> playlistView.clearChoices()
-                }
-            }
-            .show()
+        Toast.makeText(
+            this,
+            if (selectionMode) "삭제할 곡을 선택해 주세요." else "선택 모드를 종료했습니다.",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun removeSelected() {
 
-        val checked = playlistView.checkedItemPositions
-        val removeIndexes = mutableListOf<Int>()
-
-        for (i in 0 until checked.size()) {
-            if (checked.valueAt(i)) {
-                removeIndexes.add(checked.keyAt(i))
-            }
-        }
-
-        if (removeIndexes.isEmpty()) {
-
+        if (!selectionMode) {
             Toast.makeText(
                 this,
-                "삭제할 항목을 선택해 주세요.",
+                "먼저 SEL 버튼을 눌러 선택 모드로 전환해 주세요.",
                 Toast.LENGTH_SHORT
             ).show()
+            return
+        }
 
+        val removeIndexes = selectedPlaylistItems
+            .filter { it in playlist.indices }
+            .sortedDescending()
+
+        if (removeIndexes.isEmpty()) {
+            Toast.makeText(
+                this,
+                "삭제할 곡을 선택해 주세요.",
+                Toast.LENGTH_SHORT
+            ).show()
             return
         }
 
@@ -1614,33 +1639,37 @@ class MainActivity : Activity() {
         val currentRemoved = removeIndexes.contains(oldIndex)
 
         if (currentRemoved) {
-
             releaseCurrentPlayer()
             currentIndex = -1
 
             playButton.text = "▶"
             resetTimeDisplay()
-            progressBar.setPosition(0)
+            progressBar.reset()
+            resetChordDisplay()
             setScrollingSongTitle("")
         }
 
-        for (index in removeIndexes.sortedDescending()) {
+        for (index in removeIndexes) {
             playlist.removeAt(index)
             songNames.removeAt(index)
         }
 
         if (!currentRemoved && oldIndex >= 0) {
-
-            currentIndex =
-                oldIndex - removeIndexes.count { it < oldIndex }
+            currentIndex = oldIndex - removeIndexes.count { it < oldIndex }
 
             if (currentIndex in songNames.indices) {
                 setScrollingSongTitle(songNames[currentIndex])
             }
         }
 
+        selectedPlaylistItems.clear()
+        selectionMode = false
+        selectButton.setTextColor(Color.WHITE)
+        selectButton.background = roundedBackground(
+            Color.rgb(35, 65, 88),
+            Color.rgb(64, 103, 130)
+        )
         adapter.notifyDataSetChanged()
-        playlistView.clearChoices()
 
         Toast.makeText(
             this,
