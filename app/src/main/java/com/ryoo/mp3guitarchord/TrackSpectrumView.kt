@@ -71,6 +71,7 @@ class TrackSpectrumView(context: Context) : View(context) {
     fun reset() {
         for (column in history) column.fill(0f)
         positionMs = 0
+        durationMs = 0
         invalidate()
     }
 
