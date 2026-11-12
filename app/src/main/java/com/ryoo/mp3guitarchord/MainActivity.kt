@@ -57,6 +57,7 @@ class MainActivity : Activity() {
     private lateinit var shuffleButton: Button
     private lateinit var repeatButton: Button
     private lateinit var progressBar: TrackSpectrumView
+    private lateinit var progressPercentText: TextView
     private lateinit var volumeBar: HorizontalVolumeBarView
     private lateinit var volumeValueText: TextView
     private lateinit var playlistView: ListView
@@ -80,6 +81,7 @@ class MainActivity : Activity() {
                             progressBar.setPosition(position)
                         }
                         updateTimeDisplay(position, duration)
+                        updateProgressPercent(position, duration)
                     }
                 } catch (_: Exception) {
                 }
@@ -397,10 +399,14 @@ class MainActivity : Activity() {
 
         volumeRow.addView(volumeLabel)
 
-        volumeBar = HorizontalVolumeBarView(this, 80) { value ->
+        val savedVolume = getSharedPreferences("player_settings", MODE_PRIVATE)
+            .getInt("volume_percent", 80).coerceIn(0, 100)
+        volumeBar = HorizontalVolumeBarView(this, savedVolume) { value ->
             val volume = value / 100f
             player?.setVolume(volume, volume)
             volumeValueText.text = "$value%"
+            getSharedPreferences("player_settings", MODE_PRIVATE)
+                .edit().putInt("volume_percent", value).apply()
         }
         volumeRow.addView(
             volumeBar,
@@ -410,7 +416,7 @@ class MainActivity : Activity() {
         )
 
         volumeValueText = TextView(this).apply {
-            text = "80%"
+            text = "$savedVolume%"
             textSize = if (isCompact) 10f else 12f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -445,6 +451,7 @@ class MainActivity : Activity() {
             setOnSeekPositionChanged { position ->
                 if (isPrepared && (player?.duration ?: 0) > 0) {
                     updateTimeDisplay(position, player?.duration ?: 0)
+                    updateProgressPercent(position, player?.duration ?: 0)
                 }
             }
             setOnSeekFinished { position ->                if (isPrepared && (player?.duration ?: 0) > 0) {
@@ -457,13 +464,28 @@ class MainActivity : Activity() {
             }
         }
 
-        playerPanel.addView(
+        val progressRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.rgb(16, 31, 50))
+        }
+        progressRow.addView(
             progressBar,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(if (isCompact) 31 else 36)
-            )
+            LinearLayout.LayoutParams(0, dp(if (isCompact) 31 else 36), 1f)
         )
+        progressPercentText = TextView(this).apply {
+            text = "0%"
+            textSize = if (isCompact) 10f else 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(85, 213, 255))
+            isSingleLine = true
+        }
+        progressRow.addView(
+            progressPercentText,
+            LinearLayout.LayoutParams(dp(43), dp(if (isCompact) 31 else 36))
+        )
+        playerPanel.addView(progressRow)
 
         // 재생 버튼
 
@@ -476,9 +498,12 @@ class MainActivity : Activity() {
         shuffleButton = makeButton("SHF").apply { contentDescription = "셔플" }
         val first = makeButton("⏮").apply { contentDescription = "처음곡" }
         val previous = makeButton("◀").apply { contentDescription = "이전곡" }
-        playButton = makeButton("▶").apply { contentDescription = "재생 또는 일시정지" }
+        playButton = makeButton("▶").apply {
+            contentDescription = "재생 또는 일시정지"
+            textSize = 22f
+        }
         val stop = makeButton("■").apply { contentDescription = "정지" }
-        val next = makeButton("▶▶").apply { contentDescription = "다음곡" }
+        val next = makeButton("▶").apply { contentDescription = "다음곡" }
         val last = makeButton("⏭").apply { contentDescription = "마지막곡" }
         repeatButton = makeButton("RPT").apply { contentDescription = "반복 재생" }
 
@@ -1028,6 +1053,18 @@ class MainActivity : Activity() {
             } else {
                 "총 LIVE"
             }
+        updateProgressPercent(position, duration)
+    }
+
+    private fun updateProgressPercent(position: Int, duration: Int) {
+        if (!::progressPercentText.isInitialized) return
+        progressPercentText.text = if (duration > 0) {
+            val percent = ((position.coerceAtLeast(0).toLong() * 100L) / duration)
+                .toInt().coerceIn(0, 100)
+            "$percent%"
+        } else {
+            "—%"
+        }
     }
 
     private fun setScrollingSongTitle(title: String) {
@@ -1045,6 +1082,7 @@ class MainActivity : Activity() {
     private fun resetTimeDisplay() {
         elapsedTimeText.text = "00:00"
         totalTimeText.text = "총 00:00"
+        updateProgressPercent(0, 0)
     }
 
     // --------------------------------------------------
