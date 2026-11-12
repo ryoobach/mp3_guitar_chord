@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.view.MotionEvent
+import android.os.SystemClock
 import android.view.View
 import kotlin.math.max
 
@@ -33,6 +34,8 @@ class TrackSpectrumView(context: Context) : View(context) {
 
     private var durationMs = 0
     private var positionMs = 0
+    private var lastLiveRecordAt = 0L
+    private var liveColumnIndex = 0
     private var dragging = false
     private var onSeekPositionChanged: ((Int) -> Unit)? = null
     private var onSeekFinished: ((Int) -> Unit)? = null
@@ -72,6 +75,8 @@ class TrackSpectrumView(context: Context) : View(context) {
         for (column in history) column.fill(0f)
         positionMs = 0
         durationMs = 0
+        lastLiveRecordAt = 0L
+        liveColumnIndex = 0
         invalidate()
     }
 
@@ -92,6 +97,36 @@ class TrackSpectrumView(context: Context) : View(context) {
             history[columnIndex][band] = max(history[columnIndex][band], peak.coerceIn(0f, 1f))
         }
         positionMs = position.coerceIn(0, duration)
+        invalidate()
+    }
+
+    /**
+     * Records a live stream without a known duration. New analysis frames are
+     * appended from left to right; once full, older columns scroll away.
+     */
+    fun recordLiveSpectrum(fftLevels: FloatArray, nowMs: Long = SystemClock.elapsedRealtime()) {
+        if (fftLevels.isEmpty()) return
+        if (lastLiveRecordAt != 0L && nowMs - lastLiveRecordAt < 350L) return
+        lastLiveRecordAt = nowMs
+
+        if (liveColumnIndex >= timeColumns) {
+            for (x in 1 until timeColumns) history[x - 1] = history[x].copyOf()
+            liveColumnIndex = timeColumns - 1
+        }
+
+        val column = history[liveColumnIndex]
+        column.fill(0f)
+        for (band in 0 until frequencyBands) {
+            val from = band * fftLevels.size / frequencyBands
+            val to = max(from + 1, (band + 1) * fftLevels.size / frequencyBands)
+                .coerceAtMost(fftLevels.size)
+            var peak = 0f
+            for (i in from until to) peak = max(peak, fftLevels[i])
+            column[band] = peak.coerceIn(0f, 1f)
+        }
+        liveColumnIndex++
+        durationMs = 0
+        positionMs = 0
         invalidate()
     }
 
