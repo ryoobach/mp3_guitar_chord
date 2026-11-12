@@ -718,23 +718,24 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), 0, 0, 0)
+            setPadding(dp(3), 0, dp(2), 0)
         }
 
-        val guitarIcon = TextView(this).apply {
-            text = "🎸"
-            textSize = if (isCompact) 17f else 21f
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-        }
-
+        // 하단에도 런처에 등록된 실제 앱 아이콘을 표시합니다.
         row.addView(
-            guitarIcon,
+            createAppIcon(dp(if (isCompact) 27 else 32)),
             LinearLayout.LayoutParams(
-                dp(if (isCompact) 25 else 30),
-                dp(36)
-            )
+                dp(if (isCompact) 27 else 32),
+                dp(if (isCompact) 27 else 32)
+            ).apply {
+                setMargins(0, 0, dp(5), 0)
+            }
         )
+
+        val textColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
@@ -746,11 +747,36 @@ class MainActivity : Activity() {
             includeFontPadding = false
         }
 
-        row.addView(
+        val developer = TextView(this).apply {
+            text = "Ryoo Jaesang & 최피디"
+            textSize = if (isCompact) 6f else 8f
+            setTextColor(Color.rgb(180, 195, 210))
+            isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            includeFontPadding = false
+        }
+
+        textColumn.addView(
             title,
             LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        textColumn.addView(
+            developer,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        row.addView(
+            textColumn,
+            LinearLayout.LayoutParams(
                 0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 1f
             )
         )
