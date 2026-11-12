@@ -1004,9 +1004,9 @@ class MainActivity : Activity() {
 
         totalTimeText.text =
             if (duration > 0) {
-                "/ ${formatTime(duration)}"
+                "총 ${formatTime(duration)}"
             } else {
-                "/ LIVE"
+                "총 LIVE"
             }
     }
 
@@ -1024,7 +1024,7 @@ class MainActivity : Activity() {
 
     private fun resetTimeDisplay() {
         elapsedTimeText.text = "00:00"
-        totalTimeText.text = "/ 00:00"
+        totalTimeText.text = "총 00:00"
     }
 
     // --------------------------------------------------
