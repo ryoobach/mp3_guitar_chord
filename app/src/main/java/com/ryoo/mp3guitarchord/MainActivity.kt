@@ -8,6 +8,7 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
@@ -16,6 +17,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.widget.*
 import java.util.Locale
 
@@ -606,7 +608,31 @@ class MainActivity : Activity() {
             )
         )
 
+        // Android 15 이상(targetSdk 35)의 Edge-to-Edge 화면에서
+        // 상태 표시줄과 내비게이션 바가 앱 UI를 가리지 않도록 여백을 적용합니다.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            root.setOnApplyWindowInsetsListener { view, windowInsets ->
+                val systemBars = windowInsets.getInsets(
+                    WindowInsets.Type.systemBars() or
+                        WindowInsets.Type.displayCutout()
+                )
+
+                view.setPadding(
+                    dp(8) + systemBars.left,
+                    dp(4) + systemBars.top,
+                    dp(8) + systemBars.right,
+                    dp(4) + systemBars.bottom
+                )
+
+                windowInsets
+            }
+        }
+
         setContentView(root)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            root.requestApplyInsets()
+        }
     }
 
     // --------------------------------------------------
