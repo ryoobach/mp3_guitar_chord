@@ -145,11 +145,11 @@ class MainActivity : Activity() {
             else -> 27f
         }
 
-        // 기타 코드 글씨를 기존보다 두 단계 작게 조정합니다.
+        // 기타 코드 글씨를 한 번 더 눈에 띄게 축소합니다.
         val chordFontSize = when {
-            isCompact -> 21f
-            isTablet -> 34f
-            else -> 28f
+            isCompact -> 17f
+            isTablet -> 26f
+            else -> 22f
         }
 
         val root = LinearLayout(this).apply {
@@ -447,8 +447,7 @@ class MainActivity : Activity() {
                     updateTimeDisplay(position, player?.duration ?: 0)
                 }
             }
-            setOnSeekFinished { position ->
-                if (isPrepared && (player?.duration ?: 0) > 0) {
+            setOnSeekFinished { position ->                if (isPrepared && (player?.duration ?: 0) > 0) {
                     player?.seekTo(position)
                 }
                 isSeeking = false
@@ -897,8 +896,7 @@ class MainActivity : Activity() {
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord $versionName"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
+            textSize = 14f            typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
             includeFontPadding = false
@@ -1347,8 +1345,7 @@ class MainActivity : Activity() {
             contentResolver.query(
                 uri,
                 null,
-                null,
-                null,
+                null,                null,
                 null
             )?.use { cursor ->
 
