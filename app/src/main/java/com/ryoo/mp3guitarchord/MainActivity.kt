@@ -571,7 +571,7 @@ class MainActivity : Activity() {
                     if (!selectedPlaylistItems.add(position)) {
                         selectedPlaylistItems.remove(position)
                     }
-                    adapter.notifyDataSetChanged()
+                    this@MainActivity.adapter.notifyDataSetChanged()
                 } else {
                     playTrack(position)
                 }
