@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private var repeatMode = 0
 
     private lateinit var timeText: TextView
+    private lateinit var songTitle: TextView
     private lateinit var chordText: TextView
     private lateinit var playButton: Button
     private lateinit var shuffleButton: Button
@@ -73,6 +74,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         createScreen()
         updateModeButtons()
         handler.post(updateTask)
@@ -86,16 +88,89 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(7), dp(8), dp(6))
+            setPadding(dp(8), dp(5), dp(8), dp(5))
             setBackgroundColor(Color.rgb(8, 15, 27))
         }
 
-        // 상단 브랜딩: 아이콘 + 앱 이름 + 개발자 이름 한 줄
+        // ----------------------------------------------
+        // 상단: 앱 이름 + 개발자 + 홈 / 종료 버튼
+        // ----------------------------------------------
+
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(3), 0, dp(2), 0)
+        }
+
+        val topInfo = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val topTitle = TextView(this).apply {
+            text = "Easy MP3 Guitar Chord"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(85, 213, 255))
+            isSingleLine = true
+            includeFontPadding = false
+        }
+
+        val topDeveloper = TextView(this).apply {
+            text = "Ryoo Jaesang & 최피디"
+            textSize = 9f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(245, 214, 107))
+            isSingleLine = true
+            includeFontPadding = false
+        }
+
+        topInfo.addView(topTitle)
+        topInfo.addView(topDeveloper)
+
+        topBar.addView(
+            topInfo,
+            LinearLayout.LayoutParams(0, dp(40), 1f)
+        )
+
+        // 홈 버튼: 앱을 백그라운드로 보내기
+        val homeButton = makeButton("⌂").apply {
+            textSize = 21f
+            contentDescription = "홈 화면으로 이동"
+            setOnClickListener {
+                moveTaskToBack(true)
+            }
+        }
+
+        // 종료 버튼
+        val exitButton = makeButton("×").apply {
+            textSize = 24f
+            contentDescription = "앱 종료"
+            setOnClickListener {
+                releaseCurrentPlayer()
+                finishAffinity()
+            }
+        }
+
+        topBar.addView(
+            homeButton,
+            LinearLayout.LayoutParams(dp(42), dp(36)).apply {
+                setMargins(dp(3), 0, dp(3), 0)
+            }
+        )
+
+        topBar.addView(
+            exitButton,
+            LinearLayout.LayoutParams(dp(42), dp(36)).apply {
+                setMargins(dp(3), 0, dp(2), 0)
+            }
+        )
+
         root.addView(
-            createBrandRow(false),
+            topBar,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(48)
+                dp(42)
             )
         )
 
@@ -113,7 +188,6 @@ class MainActivity : Activity() {
             )
         }
 
-        // 위쪽 영역: 왼쪽 1/3 시간, 오른쪽 2/3 코드
         val upperArea = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
@@ -146,10 +220,10 @@ class MainActivity : Activity() {
 
         upperArea.addView(
             timeArea,
-            LinearLayout.LayoutParams(0, dp(135), 1f)
+            LinearLayout.LayoutParams(0, dp(145), 1f)
         )
 
-        // 오른쪽 코드 표시 영역
+        // 오른쪽 노래 제목 + 기타 코드 + 볼륨
         val chordArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -157,6 +231,27 @@ class MainActivity : Activity() {
             setPadding(dp(7), dp(5), dp(7), dp(5))
         }
 
+        // 노래 제목
+        songTitle = TextView(this).apply {
+            text = "곡을 선택해 주세요"
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(245, 214, 107))
+            isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            includeFontPadding = false
+        }
+
+        chordArea.addView(
+            songTitle,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(27)
+            )
+        )
+
+        // 기타 코드
         chordText = TextView(this).apply {
             text = "Gm7"
             textSize = 32f
@@ -174,7 +269,7 @@ class MainActivity : Activity() {
             )
         )
 
-        // 볼륨 조절: 코드 영역 안에서 전체 폭
+        // 볼륨 조절
         val volumeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -233,12 +328,15 @@ class MainActivity : Activity() {
 
         upperArea.addView(
             chordArea,
-            LinearLayout.LayoutParams(0, dp(135), 2f)
+            LinearLayout.LayoutParams(0, dp(145), 2f)
         )
 
         playerPanel.addView(upperArea)
 
-        // 곡 진행 바: 전체 폭, 별도 설명 문구 없음
+        // ----------------------------------------------
+        // 곡 진행 바
+        // ----------------------------------------------
+
         progressBar = SeekBar(this).apply {
             max = 100
             progress = 0
@@ -288,7 +386,10 @@ class MainActivity : Activity() {
             )
         )
 
-        // 재생 관련 버튼 한 줄
+        // ----------------------------------------------
+        // 재생 관련 버튼
+        // ----------------------------------------------
+
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -351,26 +452,38 @@ class MainActivity : Activity() {
         )
 
         // ----------------------------------------------
-        // 플레이리스트
+        // 플레이리스트 제목
         // ----------------------------------------------
 
         val playlistTitle = TextView(this).apply {
             text = "PLAY LIST"
-            textSize = 16f
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(245, 214, 107))
-            setPadding(dp(4), dp(8), 0, dp(5))
+            setPadding(dp(4), dp(6), 0, dp(4))
         }
 
-        root.addView(playlistTitle)
+        root.addView(
+            playlistTitle,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(32)
+            )
+        )
+
+        // ----------------------------------------------
+        // 플레이리스트
+        // ----------------------------------------------
 
         playlistView = ListView(this).apply {
             choiceMode = ListView.CHOICE_MODE_MULTIPLE
             setBackgroundColor(Color.rgb(16, 31, 50))
             setCacheColorHint(Color.TRANSPARENT)
+
             divider = android.graphics.drawable.ColorDrawable(
                 Color.rgb(52, 75, 97)
             )
+
             dividerHeight = dp(1)
 
             setOnItemClickListener { _, _, position, _ ->
@@ -386,6 +499,7 @@ class MainActivity : Activity() {
 
         playlistView.adapter = adapter
 
+        // 남은 화면 공간만 플레이리스트에 할당
         root.addView(
             playlistView,
             LinearLayout.LayoutParams(
@@ -396,38 +510,46 @@ class MainActivity : Activity() {
         )
 
         // ----------------------------------------------
-        // 맨 아래: 왼쪽 관리 버튼 + 오른쪽 브랜딩
+        // 맨 아래: 관리 버튼 + 앱 아이콘 + 개발자 표시
         // ----------------------------------------------
 
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, dp(3), 0, 0)
         }
 
         val add = makeButton("ADD")
         val remove = makeButton("REM")
         val select = makeButton("SEL")
 
-        add.setOnClickListener { showAddMenu() }
-        remove.setOnClickListener { removeSelected() }
-        select.setOnClickListener { showSelectionMenu() }
+        add.setOnClickListener {
+            showAddMenu()
+        }
+
+        remove.setOnClickListener {
+            removeSelected()
+        }
+
+        select.setOnClickListener {
+            showSelectionMenu()
+        }
 
         bottomRow.addView(add, bottomButtonParams())
         bottomRow.addView(remove, bottomButtonParams())
         bottomRow.addView(select, bottomButtonParams())
 
-        // 오른쪽에 작은 아이콘 + 앱 이름 + 개발자 이름
+        // 하단 브랜딩
         bottomRow.addView(
             createBrandRow(true),
-            LinearLayout.LayoutParams(0, dp(38), 1f)
+            LinearLayout.LayoutParams(0, dp(42), 1f)
         )
 
         root.addView(
             bottomRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(43)
+                dp(47)
             )
         )
 
@@ -435,7 +557,7 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 상단 / 하단 공통 브랜딩
+    // 하단 브랜딩
     // --------------------------------------------------
 
     private fun createBrandRow(compact: Boolean): LinearLayout {
@@ -443,70 +565,64 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(
-                if (compact) dp(2) else dp(1),
-                0,
-                0,
-                0
-            )
+            setPadding(dp(2), 0, dp(2), 0)
         }
+
+        val iconSize = if (compact) 30 else 38
 
         val icon = TextView(this).apply {
             text = "🎸"
             gravity = Gravity.CENTER
-            textSize = if (compact) 19f else 27f
+            textSize = if (compact) 19f else 25f
             background = roundedBackground(
                 Color.rgb(18, 60, 97),
                 Color.rgb(85, 213, 255)
             )
         }
 
-        val iconSize = if (compact) 29 else 40
-
         row.addView(
             icon,
-            LinearLayout.LayoutParams(dp(iconSize), dp(iconSize))
+            LinearLayout.LayoutParams(
+                dp(iconSize),
+                dp(iconSize)
+            )
         )
 
-        val titleSize = if (compact) 10.5f else 16f
-        val developerSize = if (compact) 7f else 9f
+        val info = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), 0, 0, 0)
+        }
 
         val title = TextView(this).apply {
             text = "Easy MP3 Guitar Chord"
-            textSize = titleSize
+            textSize = if (compact) 10f else 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(85, 213, 255))
             isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.END
             includeFontPadding = false
         }
 
         val developer = TextView(this).apply {
             text = "Ryoo Jaesang & 최피디"
-            textSize = developerSize
+            textSize = if (compact) 8f else 10f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(245, 214, 107))
             isSingleLine = true
             includeFontPadding = false
         }
 
-        row.addView(
-            title,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                leftMargin = dp(if (compact) 4 else 7)
-            }
-        )
+        info.addView(title)
+        info.addView(developer)
 
         row.addView(
-            developer,
+            info,
             LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                leftMargin = dp(5)
-            }
+                0,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                1f
+            )
         )
 
         return row
@@ -517,6 +633,7 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun addDivider(parent: LinearLayout) {
+
         val line = View(this).apply {
             setBackgroundColor(Color.rgb(52, 97, 122))
         }
@@ -527,8 +644,8 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(1)
             ).apply {
-                topMargin = dp(4)
-                bottomMargin = dp(5)
+                topMargin = dp(3)
+                bottomMargin = dp(3)
             }
         )
     }
@@ -537,6 +654,7 @@ class MainActivity : Activity() {
         color: Int,
         strokeColor: Int
     ): GradientDrawable {
+
         return GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(5).toFloat()
@@ -545,6 +663,7 @@ class MainActivity : Activity() {
     }
 
     private fun makeButton(label: String): Button {
+
         return Button(this).apply {
             text = label
             textSize = 11f
@@ -556,6 +675,7 @@ class MainActivity : Activity() {
             minHeight = 0
             minimumHeight = 0
             setPadding(dp(2), 0, dp(2), 0)
+
             background = roundedBackground(
                 Color.rgb(35, 65, 88),
                 Color.rgb(64, 103, 130)
@@ -564,12 +684,14 @@ class MainActivity : Activity() {
     }
 
     private fun controlParams(): LinearLayout.LayoutParams {
+
         return LinearLayout.LayoutParams(0, dp(44), 1f).apply {
             setMargins(dp(2), 0, dp(2), 0)
         }
     }
 
     private fun bottomButtonParams(): LinearLayout.LayoutParams {
+
         return LinearLayout.LayoutParams(dp(43), dp(34)).apply {
             setMargins(dp(2), 0, dp(2), 0)
         }
@@ -583,6 +705,7 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun showAddMenu() {
+
         val options = arrayOf(
             "MP3 파일 추가",
             "인터넷 방송 주소 추가"
@@ -600,9 +723,11 @@ class MainActivity : Activity() {
     }
 
     private fun showUrlDialog() {
+
         val input = EditText(this).apply {
             hint = "https://example.com/radio.mp3"
             setSingleLine(true)
+
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_URI
@@ -620,6 +745,7 @@ class MainActivity : Activity() {
     }
 
     private fun addStream(address: String) {
+
         if (address.isBlank()) {
             Toast.makeText(
                 this,
@@ -663,6 +789,7 @@ class MainActivity : Activity() {
 
         if (currentIndex == -1) {
             currentIndex = 0
+            songTitle.text = songNames[0]
             playlistView.setItemChecked(0, true)
         }
 
@@ -702,6 +829,7 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun openFilePicker() {
+
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
@@ -717,6 +845,7 @@ class MainActivity : Activity() {
         resultCode: Int,
         data: Intent?
     ) {
+
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode != 100 ||
@@ -738,6 +867,7 @@ class MainActivity : Activity() {
             }
 
             for (uri in added) {
+
                 try {
                     contentResolver.takePersistableUriPermission(
                         uri,
@@ -756,6 +886,7 @@ class MainActivity : Activity() {
 
             if (currentIndex == -1 && playlist.isNotEmpty()) {
                 currentIndex = 0
+                songTitle.text = songNames[0]
                 playlistView.setItemChecked(0, true)
             }
 
@@ -766,6 +897,7 @@ class MainActivity : Activity() {
             ).show()
 
         } catch (_: Exception) {
+
             Toast.makeText(
                 this,
                 "파일 불러오기 실패",
@@ -775,6 +907,7 @@ class MainActivity : Activity() {
     }
 
     private fun getFileName(uri: Uri): String {
+
         var name = uri.lastPathSegment ?: "Audio"
 
         try {
@@ -785,6 +918,7 @@ class MainActivity : Activity() {
                 null,
                 null
             )?.use { cursor ->
+
                 if (cursor.moveToFirst()) {
                     val index =
                         cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -805,11 +939,14 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun playTrack(index: Int) {
+
         if (index !in playlist.indices) return
 
         releaseCurrentPlayer()
 
         currentIndex = index
+        songTitle.text = songNames[index]
+
         playlistView.setItemChecked(index, true)
 
         playButton.text = "…"
@@ -818,6 +955,7 @@ class MainActivity : Activity() {
 
         try {
             val uri = playlist[index]
+
             val isStream =
                 uri.scheme == "http" || uri.scheme == "https"
 
@@ -839,6 +977,7 @@ class MainActivity : Activity() {
             }
 
             mp.setOnPreparedListener { prepared ->
+
                 if (player !== prepared) return@setOnPreparedListener
 
                 isPrepared = true
@@ -847,11 +986,13 @@ class MainActivity : Activity() {
                 prepared.setVolume(volume, volume)
 
                 if (prepared.duration > 0) {
+
                     progressBar.max = prepared.duration
                     progressBar.progress = 0
 
                     timeText.text =
                         "00:00 / ${formatTime(prepared.duration)}"
+
                 } else {
                     timeText.text = "00:00 / LIVE"
                 }
@@ -865,6 +1006,7 @@ class MainActivity : Activity() {
             }
 
             mp.setOnErrorListener { _, _, _ ->
+
                 isPrepared = false
                 playButton.text = "▶"
 
@@ -880,6 +1022,7 @@ class MainActivity : Activity() {
             mp.prepareAsync()
 
         } catch (_: Exception) {
+
             releaseCurrentPlayer()
             playButton.text = "▶"
 
@@ -892,14 +1035,17 @@ class MainActivity : Activity() {
     }
 
     private fun togglePlayback() {
+
         val mp = player
 
         if (mp == null) {
+
             if (currentIndex in playlist.indices) {
                 playTrack(currentIndex)
             } else if (playlist.isNotEmpty()) {
                 playTrack(0)
             } else {
+
                 Toast.makeText(
                     this,
                     "먼저 파일이나 방송을 추가해 주세요.",
@@ -921,11 +1067,13 @@ class MainActivity : Activity() {
         }
     }
 
-    // 정지 버튼: 재생을 멈추고 처음 위치로 이동
+    // 정지 버튼
     private fun stopPlayback() {
+
         val mp = player
 
         if (mp != null && isPrepared) {
+
             try {
                 if (mp.isPlaying) {
                     mp.pause()
@@ -945,6 +1093,7 @@ class MainActivity : Activity() {
     }
 
     private fun handleTrackCompletion() {
+
         if (repeatMode == 2) {
             playTrack(currentIndex)
             return
@@ -966,6 +1115,7 @@ class MainActivity : Activity() {
     }
 
     private fun playRandomTrack() {
+
         if (playlist.isEmpty()) return
 
         if (playlist.size == 1) {
@@ -980,6 +1130,7 @@ class MainActivity : Activity() {
     }
 
     private fun playNext() {
+
         if (playlist.isEmpty()) return
 
         if (shuffleMode) {
@@ -989,6 +1140,7 @@ class MainActivity : Activity() {
         } else if (repeatMode == 1) {
             playTrack(0)
         } else {
+
             Toast.makeText(
                 this,
                 "마지막 곡입니다.",
@@ -998,6 +1150,7 @@ class MainActivity : Activity() {
     }
 
     private fun playPrevious() {
+
         if (playlist.isEmpty()) return
 
         if (shuffleMode) {
@@ -1007,6 +1160,7 @@ class MainActivity : Activity() {
         } else if (repeatMode == 1) {
             playTrack(playlist.lastIndex)
         } else {
+
             Toast.makeText(
                 this,
                 "첫 번째 곡입니다.",
@@ -1016,10 +1170,11 @@ class MainActivity : Activity() {
     }
 
     // --------------------------------------------------
-    // 재생목록 선택 / 삭제
+    // 플레이리스트 선택 / 삭제
     // --------------------------------------------------
 
     private fun showSelectionMenu() {
+
         val options = arrayOf(
             "전체 선택",
             "전체 선택 해제"
@@ -1028,7 +1183,9 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("재생목록 선택")
             .setItems(options) { _, which ->
+
                 when (which) {
+
                     0 -> {
                         for (i in songNames.indices) {
                             playlistView.setItemChecked(i, true)
@@ -1042,6 +1199,7 @@ class MainActivity : Activity() {
     }
 
     private fun removeSelected() {
+
         val checked = playlistView.checkedItemPositions
         val removeIndexes = mutableListOf<Int>()
 
@@ -1052,11 +1210,13 @@ class MainActivity : Activity() {
         }
 
         if (removeIndexes.isEmpty()) {
+
             Toast.makeText(
                 this,
                 "삭제할 항목을 선택해 주세요.",
                 Toast.LENGTH_SHORT
             ).show()
+
             return
         }
 
@@ -1064,11 +1224,14 @@ class MainActivity : Activity() {
         val currentRemoved = removeIndexes.contains(oldIndex)
 
         if (currentRemoved) {
+
             releaseCurrentPlayer()
             currentIndex = -1
+
             playButton.text = "▶"
             timeText.text = "00:00 / 00:00"
             progressBar.progress = 0
+            songTitle.text = "곡을 선택해 주세요"
         }
 
         for (index in removeIndexes.sortedDescending()) {
@@ -1077,8 +1240,13 @@ class MainActivity : Activity() {
         }
 
         if (!currentRemoved && oldIndex >= 0) {
+
             currentIndex =
                 oldIndex - removeIndexes.count { it < oldIndex }
+
+            if (currentIndex in songNames.indices) {
+                songTitle.text = songNames[currentIndex]
+            }
         }
 
         adapter.notifyDataSetChanged()
@@ -1096,6 +1264,7 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun releaseCurrentPlayer() {
+
         isPrepared = false
 
         try {
@@ -1112,6 +1281,7 @@ class MainActivity : Activity() {
     }
 
     private fun formatTime(milliseconds: Int): String {
+
         val seconds =
             milliseconds.coerceAtLeast(0) / 1000
 
@@ -1127,8 +1297,10 @@ class MainActivity : Activity() {
         (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
+
         handler.removeCallbacks(updateTask)
         releaseCurrentPlayer()
+
         super.onDestroy()
     }
 }
