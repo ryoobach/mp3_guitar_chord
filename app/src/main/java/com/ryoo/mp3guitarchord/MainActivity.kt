@@ -1052,9 +1052,9 @@ class MainActivity : Activity() {
 
         totalTimeText.text =
             if (duration > 0) {
-                "총 ${formatTime(duration)}"
+                formatTime(duration)
             } else {
-                "총 LIVE"
+                "LIVE"
             }
         updateProgressPercent(position, duration)
     }
@@ -1084,7 +1084,7 @@ class MainActivity : Activity() {
 
     private fun resetTimeDisplay() {
         elapsedTimeText.text = "00:00"
-        totalTimeText.text = "총 00:00"
+        totalTimeText.text = "00:00"
         updateProgressPercent(0, 0)
     }
 
