@@ -35,6 +35,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.*
 import java.util.Locale
+import kotlin.math.pow
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONArray
