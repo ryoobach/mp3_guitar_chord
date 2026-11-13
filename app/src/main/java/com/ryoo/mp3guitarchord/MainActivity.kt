@@ -2212,15 +2212,16 @@ class MainActivity : Activity() {
         val changeCooldownPassed = lastDisplayedChordMs == 0L ||
             now - lastDisplayedChordMs >= 850L
 
-        if (stableLongEnough && changeCooldownPassed && displayedChord != chord) {
+        // Record a stable chord at a steady interval, even when the chord
+        // remains the same. This keeps all five recent-history slots populated
+        // during sustained chords instead of leaving only the center slot visible.
+        if (stableLongEnough && changeCooldownPassed) {
             displayedChord = chord
             lastDisplayedChordMs = now
 
-            if (chordHistory.lastOrNull() != chord) {
-                chordHistory.add(chord)
-                if (chordHistory.size > 5) chordHistory.removeAt(0)
-                renderChordHistory(animate = true)
-            }
+            chordHistory.add(chord)
+            if (chordHistory.size > 5) chordHistory.removeAt(0)
+            renderChordHistory(animate = true)
         }
     }
 
