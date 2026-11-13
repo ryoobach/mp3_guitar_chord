@@ -453,7 +453,7 @@ class MainActivity : Activity() {
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setTextColor(
-                    if (index == 2) Color.rgb(85, 213, 255)
+                    if (index == 6) Color.rgb(85, 213, 255)
                     else Color.rgb(125, 151, 174)
                 )
                 includeFontPadding = false
@@ -1323,26 +1323,93 @@ class MainActivity : Activity() {
     }
 
     private fun showUrlDialog() {
-
         val input = EditText(this).apply {
-            // 방송 주소는 기본값이나 이전 입력값을 자동으로 채우지 않습니다.
             setText("")
-            hint = "방송 주소를 입력하세요"
+            hint = "방송 주소를 입력하세요."
             setSingleLine(true)
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_VARIATION_URI
+                    android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+            addView(
+                input,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(52)
+                )
+            )
+            val historyButton = Button(this@MainActivity).apply {
+                text = "최근 방송 주소 선택"
+                isAllCaps = false
+                setOnClickListener {
+                    val history = loadRadioAddressHistory()
+                    if (history.isEmpty()) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "저장된 방송 주소가 없습니다.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setItems(history.toTypedArray()) { _, which ->
+                                input.setText(history[which])
+                                input.setSelection(input.text.length)
+                            }
+                            .setNegativeButton("닫기", null)
+                            .show()
+                    }
+                }
+            }
+            addView(
+                historyButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(44)
+                ).apply { topMargin = dp(6) }
+            )
         }
 
         AlertDialog.Builder(this)
-            .setTitle("인터넷 방송 주소")
-            .setMessage("방송 URL을 입력하거나 붙여넣으세요.")
-            .setView(input)
+            .setView(content)
             .setPositiveButton("추가") { _, _ ->
                 addStream(input.text.toString().trim())
             }
             .setNegativeButton("취소", null)
             .show()
+    }
+
+    private fun loadRadioAddressHistory(): List<String> {
+        val saved = getSharedPreferences("player_settings", MODE_PRIVATE)
+            .getString("radio_address_history", null) ?: return emptyList()
+        return try {
+            val array = JSONArray(saved)
+            (0 until array.length())
+                .map { array.optString(it).trim() }
+                .filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun rememberRadioAddress(address: String) {
+        val history = (listOf(address) + loadRadioAddressHistory())
+            .distinct()
+            .take(20)
+        val array = JSONArray()
+        history.forEach { array.put(it) }
+        getSharedPreferences("player_settings", MODE_PRIVATE).edit()
+            .putString("radio_address_history", array.toString())
+            .putString("last_stream_url", address)
+            .apply()
+    }
+
+    private fun isCurrentStream(): Boolean {
+        val uri = playlist.getOrNull(currentIndex) ?: return false
+        return uri.scheme == "http" || uri.scheme == "https"
     }
 
     private fun addStream(address: String) {
@@ -1384,8 +1451,7 @@ class MainActivity : Activity() {
             return
         }
 
-        getSharedPreferences("player_settings", MODE_PRIVATE).edit()
-            .putString("last_stream_url", uri.toString()).apply()
+        rememberRadioAddress(uri.toString())
         playlist.add(uri)
         songNames.add("RADIO | ${uri.host ?: "인터넷 방송"}")
 
@@ -2349,6 +2415,12 @@ class MainActivity : Activity() {
         val now = SystemClock.elapsedRealtime()
         // 코드가 일정 시간 검출되지 않지만 오디오 신호는 계속 들어오면
         // 방송 진행 멘트 또는 코드가 뚜렷하지 않은 구간으로 표시합니다.
+        // DJ 진행 멘트 안내는 인터넷 방송에서만 허용합니다.
+        // 로컬 MP3에서는 어떤 경우에도 이 안내를 표시하지 않습니다.
+        if (!isCurrentStream()) {
+            if (::chordStatusText.isInitialized) chordStatusText.visibility = View.GONE
+            return
+        }
         if (lastChordDetectedMs == 0L || now - lastChordDetectedMs >= 2400L) {
             if (::chordStatusText.isInitialized) {
                 chordStatusText.text = "멘트 중입니다"
@@ -2513,7 +2585,7 @@ class MainActivity : Activity() {
                     // with the wrong character encoding. Start with a clean station label;
                     // the live ICY title will replace it after playback begins.
                     songNames.add(
-                        if (isStream) "RADIO | ${uri.host ?: "인터넷 방송"}"
+                        if (isStream) savedName.ifBlank { "RADIO | ${uri.host ?: "인터넷 방송"}" }
                         else savedName.ifBlank { getFileName(uri) }
                     )
                 }

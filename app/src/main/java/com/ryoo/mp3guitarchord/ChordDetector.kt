@@ -96,6 +96,9 @@ object ChordDetector {
         }
 
         val margin = bestScore - secondScore
-        return if (bestCoverage >= 0.012 && bestScore >= 0.36 && margin >= 0.006) bestName else null
+        // Keep the acceptance gate permissive enough for compressed mixes,
+        // radio processing and vocal-heavy recordings. The rolling vote in
+        // MainActivity handles short-lived false candidates.
+        return if (bestCoverage >= 0.012 && bestScore >= 0.20 && margin >= 0.002) bestName else null
     }
 }
