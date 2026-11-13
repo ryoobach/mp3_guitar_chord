@@ -55,6 +55,16 @@ class MainActivity : Activity() {
     private val selectedBrowserFiles = linkedMapOf<String, Pair<Uri, String>>()
     private var browserCurrentPath = ""
     private var folderSelectionMode = false
+    private var highlightedIndex = -1
+
+    private fun browserPathKey(): String =
+        if (folderSelectionMode) "last_folder_browser_path" else "last_file_browser_path"
+
+    private fun rememberBrowserPath() {
+        getSharedPreferences("player_settings", MODE_PRIVATE).edit()
+            .putString(browserPathKey(), browserCurrentPath)
+            .apply()
+    }
 
     private var player: MediaPlayer? = null
     private var currentIndex = -1
@@ -189,13 +199,7 @@ class MainActivity : Activity() {
             setScrollingSongTitle("")
         }
 
-        selectButton.setTextColor(
-            if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE
-        )
-        selectButton.background = roundedBackground(
-            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
-            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
-        )
+        updateSelectionButtonAppearance()
 
         val mp = player
         playButton.text = when {
@@ -743,6 +747,7 @@ class MainActivity : Activity() {
             )
             dividerHeight = dp(1)
             setOnItemClickListener { _, _, position, _ ->
+                highlightedIndex = position
                 if (selectionMode) {
                     if (!selectedPlaylistItems.add(position)) {
                         selectedPlaylistItems.remove(position)
@@ -765,7 +770,7 @@ class MainActivity : Activity() {
             ): View {
                 val label = (super.getView(position, convertView, parent) as TextView)
                 val isSelected = position in selectedPlaylistItems
-                val isCurrentTrack = position == currentIndex && player != null
+                val isCurrentTrack = position == highlightedIndex || (highlightedIndex < 0 && position == currentIndex && player != null)
 
                 label.text = songNames[position]
                 label.textSize = 14f
@@ -833,15 +838,36 @@ class MainActivity : Activity() {
         selectButton = makeButton("SEL")
 
         add.setOnClickListener {
-            showAddMenu()
+            openFilePicker()
+        }
+        add.setOnLongClickListener {
+            showActionPopup(add, listOf(
+                "폴더 추가" to { openFolderPicker() },
+                "방송 주소 추가" to { showUrlDialog() }
+            ))
+            true
         }
 
         remove.setOnClickListener {
-            removeSelected()
+            removeHighlighted()
+        }
+        remove.setOnLongClickListener {
+            showActionPopup(remove, listOf(
+                "선택 항목 삭제" to { removeSelected() },
+                "전체 삭제" to { removeAllPlaylistItems() }
+            ))
+            true
         }
 
         selectButton.setOnClickListener {
             toggleSelectionMode()
+        }
+        selectButton.setOnLongClickListener {
+            showActionPopup(selectButton, listOf(
+                "전체 선택" to { selectAllPlaylistItems() },
+                "전체 선택 해제 (Select Zero)" to { clearPlaylistSelection() }
+            ))
+            true
         }
 
         val bottomButtonWidth = when {
@@ -1607,6 +1633,8 @@ class MainActivity : Activity() {
 
     private fun openFilePicker() {
         folderSelectionMode = false
+        browserCurrentPath = getSharedPreferences("player_settings", MODE_PRIVATE)
+            .getString("last_file_browser_path", "") ?: ""
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
@@ -1618,13 +1646,14 @@ class MainActivity : Activity() {
             return
         }
 
-        browserCurrentPath = ""
         selectedBrowserFiles.clear()
         showMp3Browser()
     }
 
     private fun openFolderPicker() {
         folderSelectionMode = true
+        browserCurrentPath = getSharedPreferences("player_settings", MODE_PRIVATE)
+            .getString("last_folder_browser_path", "") ?: ""
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
@@ -1636,7 +1665,6 @@ class MainActivity : Activity() {
             return
         }
 
-        browserCurrentPath = ""
         selectedBrowserFiles.clear()
         showMp3Browser()
     }
@@ -1742,6 +1770,7 @@ class MainActivity : Activity() {
                         .trimEnd('/')
                         .substringBeforeLast('/', "")
                         .let { if (it.isBlank()) "" else "$it/" }
+                    rememberBrowserPath()
                     dialog.dismiss()
                     showMp3Browser()
                     return@setOnItemClickListener
@@ -1752,6 +1781,7 @@ class MainActivity : Activity() {
 
                 if (entry.folderPath != null) {
                     browserCurrentPath = entry.folderPath
+                    rememberBrowserPath()
                 } else {
                     val uri = entry.uri ?: return@setOnItemClickListener
                     val key = uri.toString()
@@ -1869,20 +1899,20 @@ class MainActivity : Activity() {
         return result    }
 
     private fun addSelectedBrowserFiles() {
-        var addedCount = 0
-
-        selectedBrowserFiles.values.forEach { (uri, name) ->
-            if (!playlist.contains(uri)) {
-                playlist.add(uri)
-                songNames.add(name)
-                addedCount++
-            }
+        val newFiles = selectedBrowserFiles.values.filter { (uri, _) -> !playlist.contains(uri) }
+        val insertionIndex = if (highlightedIndex in playlist.indices) highlightedIndex + 1 else playlist.size
+        newFiles.forEachIndexed { offset, (uri, name) ->
+            playlist.add(insertionIndex + offset, uri)
+            songNames.add(insertionIndex + offset, name)
         }
+        val addedCount = newFiles.size
+        if (highlightedIndex >= insertionIndex && addedCount > 0) highlightedIndex += addedCount
 
         adapter.notifyDataSetChanged()
 
         if (currentIndex == -1 && playlist.isNotEmpty()) {
             currentIndex = 0
+            if (highlightedIndex < 0) highlightedIndex = 0
             setScrollingSongTitle(songNames[0])
             adapter.notifyDataSetChanged()
         }
@@ -1993,8 +2023,8 @@ class MainActivity : Activity() {
             return
         }
 
-        val insertionIndex = if (currentIndex in playlist.indices) {
-            currentIndex + 1
+        val insertionIndex = if (highlightedIndex in playlist.indices) {
+            highlightedIndex + 1
         } else {
             playlist.size
         }
@@ -2056,6 +2086,7 @@ class MainActivity : Activity() {
 
         releaseCurrentPlayer()
         currentIndex = index
+        highlightedIndex = index
         savePlaylist()
         setScrollingSongTitle(songNames[index])
         playButton.text = "…"
@@ -2321,6 +2352,114 @@ class MainActivity : Activity() {
     // --------------------------------------------------
     // 플레이리스트 선택 / 삭제
     // --------------------------------------------------
+
+    private fun showActionPopup(anchor: View, actions: List<Pair<String, () -> Unit>>) {
+        val menu = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            background = roundedBackground(Color.rgb(24, 42, 61), Color.rgb(85, 130, 158))
+        }
+        val popup = PopupWindow(
+            menu,
+            dp(176),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            elevation = dp(10).toFloat()
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        }
+        actions.forEach { (label, action) ->
+            val item = makeButton(label).apply {
+                textSize = 13f
+                setPadding(dp(8), 0, dp(8), 0)
+                setOnClickListener {
+                    popup.dismiss()
+                    action()
+                }
+            }
+            menu.addView(item, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)
+            ).apply { bottomMargin = dp(3) })
+        }
+        menu.measure(
+            View.MeasureSpec.makeMeasureSpec(dp(176), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val location = IntArray(2)
+        anchor.getLocationOnScreen(location)
+        val popupHeight = menu.measuredHeight
+        val y = (location[1] - popupHeight).coerceAtLeast(dp(4))
+        popup.showAtLocation(anchor, Gravity.TOP or Gravity.LEFT, location[0], y)
+    }
+
+    private fun selectAllPlaylistItems() {
+        selectionMode = true
+        selectedPlaylistItems.clear()
+        selectedPlaylistItems.addAll(playlist.indices)
+        updateSelectionButtonAppearance()
+        adapter.notifyDataSetChanged()
+    }
+
+    private fun clearPlaylistSelection() {
+        selectedPlaylistItems.clear()
+        selectionMode = false
+        updateSelectionButtonAppearance()
+        adapter.notifyDataSetChanged()
+    }
+
+    private fun updateSelectionButtonAppearance() {
+        selectButton.setTextColor(if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE)
+        selectButton.background = roundedBackground(
+            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
+            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
+        )
+    }
+
+    private fun removeHighlighted() {
+        val index = highlightedIndex.takeIf { it in playlist.indices }
+            ?: currentIndex.takeIf { it in playlist.indices }
+        if (index == null) {
+            Toast.makeText(this, "삭제할 곡이 없습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val removedCurrent = index == currentIndex
+        if (removedCurrent) {
+            releaseCurrentPlayer()
+            currentIndex = -1
+            playButton.text = "▶"
+            resetTimeDisplay()
+            progressBar.reset()
+            resetChordDisplay()
+            setScrollingSongTitle("")
+        }
+        playlist.removeAt(index)
+        songNames.removeAt(index)
+        selectedPlaylistItems.remove(index)
+        selectedPlaylistItems.replaceAll { if (it > index) it - 1 else it }
+        if (currentIndex > index) currentIndex--
+        if (highlightedIndex > index) highlightedIndex--
+        else if (highlightedIndex == index) highlightedIndex = (index - 1).coerceAtMost(playlist.lastIndex)
+        if (playlist.isEmpty()) highlightedIndex = -1
+        adapter.notifyDataSetChanged()
+        savePlaylist()
+    }
+
+    private fun removeAllPlaylistItems() {
+        releaseCurrentPlayer()
+        playlist.clear()
+        songNames.clear()
+        selectedPlaylistItems.clear()
+        currentIndex = -1
+        highlightedIndex = -1
+        selectionMode = false
+        if (::selectButton.isInitialized) updateSelectionButtonAppearance()
+        if (::playButton.isInitialized) playButton.text = "▶"
+        if (::songTitle.isInitialized) setScrollingSongTitle("")
+        if (::progressBar.isInitialized) progressBar.reset()
+        if (::adapter.isInitialized) adapter.notifyDataSetChanged()
+        savePlaylist()
+        Toast.makeText(this, "플레이리스트 전체를 비웠습니다.", Toast.LENGTH_SHORT).show()
+    }
 
     private fun toggleSelectionMode() {
         selectionMode = !selectionMode
@@ -2956,6 +3095,7 @@ class MainActivity : Activity() {
             getSharedPreferences("player_settings", MODE_PRIVATE).edit()
                 .putString("saved_playlist", entries.toString())
                 .putInt("saved_current_index", currentIndex)
+                .putInt("saved_highlighted_index", highlightedIndex)
                 .apply()
         } catch (_: Exception) {
         }
@@ -3005,10 +3145,13 @@ class MainActivity : Activity() {
             currentIndex = preferences.getInt("saved_current_index", -1)
                 .takeIf { it in playlist.indices }
                 ?: if (playlist.isNotEmpty()) 0 else -1
+            highlightedIndex = preferences.getInt("saved_highlighted_index", currentIndex)
+                .takeIf { it in playlist.indices } ?: currentIndex
         } catch (_: Exception) {
             playlist.clear()
             songNames.clear()
             currentIndex = -1
+            highlightedIndex = -1
         }
     }
 
