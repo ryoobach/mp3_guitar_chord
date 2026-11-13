@@ -1708,21 +1708,53 @@ class MainActivity : Activity() {
         if (index !in playlist.indices) return
 
         releaseCurrentPlayer()
-
         currentIndex = index
         savePlaylist()
         setScrollingSongTitle(songNames[index])
-
         playButton.text = "…"
         resetTimeDisplay()
         progressBar.reset()
         resetChordDisplay()
+
+        val uri = playlist[index]
+        val isStream = uri.scheme == "http" || uri.scheme == "https"
+
+        if (!isStream) {
+            startTrackPlayback(index, uri, uri.toString())
+            return
+        }
+
+        // PLS/M3U 주소와 실제 스트림 주소를 모두 지원합니다.
+        // 네트워크 확인은 UI 스레드를 막지 않도록 별도 스레드에서 수행합니다.
+        Thread({
+            try {
+                val resolvedUrl = StreamAddressResolver.resolve(uri.toString())
+                runOnUiThread {
+                    if (currentIndex == index && playlist.getOrNull(index) == uri) {
+                        startTrackPlayback(index, uri, resolvedUrl)
+                    }
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    if (currentIndex == index && playlist.getOrNull(index) == uri) {
+                        playButton.text = "▶"
+                        Toast.makeText(
+                            this,
+                            "방송 주소를 읽을 수 없습니다. 주소를 확인해 주세요.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+        }, "Stream-Address-Resolver").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun startTrackPlayback(index: Int, originalUri: Uri, playbackUrl: String) {
         try {
-            val uri = playlist[index]
-
-            val isStream =
-                uri.scheme == "http" || uri.scheme == "https"
-
+            val isStream = originalUri.scheme == "http" || originalUri.scheme == "https"
             val mp = MediaPlayer()
             player = mp
             isPrepared = false
@@ -1736,17 +1768,15 @@ class MainActivity : Activity() {
             )
 
             if (isStream) {
-                mp.setDataSource(uri.toString())
+                mp.setDataSource(playbackUrl)
             } else {
-                mp.setDataSource(this, uri)
+                mp.setDataSource(this, originalUri)
             }
 
             mp.setOnPreparedListener { prepared ->
-
                 if (player !== prepared) return@setOnPreparedListener
 
                 isPrepared = true
-
                 val volume = volumeBar.value / 100f
                 prepared.setVolume(volume, volume)
 
@@ -1756,13 +1786,9 @@ class MainActivity : Activity() {
                 }
 
                 updateTimeDisplay(0, prepared.duration)
-
-                // 재생을 시작한 뒤 오디오 세션에 분석기를 연결해야
-                // 일부 기기에서 FFT 데이터가 안정적으로 전달됩니다.
                 prepared.start()
                 lastFftReceivedMs = 0L
                 attachAudioVisualizer(prepared.audioSessionId)
-                // Some Android devices expose the audio session shortly after playback starts.
                 handler.postDelayed({
                     if (player === prepared && isPrepared && prepared.isPlaying &&
                         lastFftReceivedMs == 0L &&
@@ -1772,41 +1798,27 @@ class MainActivity : Activity() {
                     }
                 }, 900L)
                 if (isStream) {
-                    startIcyMetadataReader(uri.toString(), prepared)
+                    startIcyMetadataReader(playbackUrl, prepared)
                 }
                 playButton.text = "Ⅱ"
             }
 
-            mp.setOnCompletionListener {
-                handleTrackCompletion()
-            }
-
+            mp.setOnCompletionListener { handleTrackCompletion() }
             mp.setOnErrorListener { _, _, _ ->
-
                 isPrepared = false
                 playButton.text = "▶"
-
                 Toast.makeText(
                     this,
                     "재생할 수 없는 주소 또는 파일입니다.",
                     Toast.LENGTH_LONG
                 ).show()
-
                 true
             }
-
             mp.prepareAsync()
-
         } catch (_: Exception) {
-
             releaseCurrentPlayer()
             playButton.text = "▶"
-
-            Toast.makeText(
-                this,
-                "재생을 시작할 수 없습니다.",
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(this, "재생을 시작할 수 없습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2665,5 +2677,84 @@ private class IcyMetadataReader(
         connection = null
         worker?.interrupt()
         worker = null
+    }
+}
+
+/**
+ * Resolves common internet-radio playlist formats to their real audio stream.
+ * Direct audio URLs are returned unchanged (including HTTP redirects).
+ */
+private object StreamAddressResolver {
+    fun resolve(inputUrl: String): String {
+        var currentUrl = inputUrl
+        repeat(4) {
+            val connection = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 10000
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Winamp/5.9.2")
+                setRequestProperty("Accept", "*/*")
+                setRequestProperty("Range", "bytes=0-8191")
+                setRequestProperty("Icy-MetaData", "0")
+            }
+
+            try {
+                val status = connection.responseCode
+                if (status !in 200..299) {
+                    throw java.io.IOException("HTTP $status")
+                }
+
+                val finalUrl = connection.url.toString()
+                val contentType = connection.contentType.orEmpty().lowercase(Locale.ROOT)
+                val path = runCatching { URL(finalUrl).path.lowercase(Locale.ROOT) }.getOrDefault("")
+                val isKnownPlaylist = path.endsWith(".pls") || path.endsWith(".m3u") ||
+                    path.endsWith(".m3u8") || contentType.contains("scpls") ||
+                    contentType.contains("mpegurl") || contentType.contains("playlist")
+
+                val input = connection.inputStream
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                var total = 0
+                while (total < 65536) {
+                    val count = input.read(buffer, 0, minOf(buffer.size, 65536 - total))
+                    if (count <= 0) break
+                    output.write(buffer, 0, count)
+                    total += count
+                    if (!isKnownPlaylist && total >= 4096) break
+                }
+                input.close()
+
+                val bytes = output.toByteArray()
+                val text = bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF").trim()
+                val looksLikePlaylist = isKnownPlaylist ||
+                    text.startsWith("[playlist]", ignoreCase = true) ||
+                    text.startsWith("#EXTM3U", ignoreCase = true) ||
+                    Regex("(?im)^File\\d+\\s*=").containsMatchIn(text)
+
+                if (!looksLikePlaylist) return finalUrl
+
+                val target = when {
+                    text.startsWith("[playlist]", ignoreCase = true) ||
+                        Regex("(?im)^File\\d+\\s*=").containsMatchIn(text) -> {
+                        Regex("(?im)^File\\d+\\s*=\\s*(.+?)\\s*$")
+                            .findAll(text)
+                            .map { it.groupValues[1].trim().trim('"') }
+                            .firstOrNull { it.isNotBlank() }
+                    }
+                    text.startsWith("#EXTM3U", ignoreCase = true) -> {
+                        text.lineSequence()
+                            .map { it.trim() }
+                            .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+                    }
+                    else -> null
+                } ?: throw java.io.IOException("Playlist has no stream URL")
+
+                currentUrl = URL(URL(finalUrl), target).toString()
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return currentUrl
     }
 }
