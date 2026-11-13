@@ -105,6 +105,6 @@ object ChordDetector {
         // Avoid displaying a random chord when the spectrum does not contain
         // enough evidence or two candidates are almost equally plausible.
         val confidenceMargin = bestScore - secondBestScore
-        return if (bestScore >= 0.34 && confidenceMargin >= 0.012) bestName else null
+        return if (bestScore >= 0.30 && confidenceMargin >= 0.006) bestName else null
     }
 }

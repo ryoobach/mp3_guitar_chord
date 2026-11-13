@@ -71,6 +71,7 @@ class MainActivity : Activity() {
     private var candidateChord: String? = null
     private var candidateChordFrames = 0
     private var candidateChordSinceMs = 0L
+    private val recentChordCandidates = mutableListOf<Pair<String, Long>>()
     private var displayedChord: String? = null
     private val chordHistory = mutableListOf<String>()
     // Invalidates queued FFT callbacks whenever the audio track changes.
@@ -2060,7 +2061,9 @@ class MainActivity : Activity() {
                 // Clear the previous song's chord history when StreamTitle changes.
                 if (lastIcyMetadataTitle != title) {
                     lastIcyMetadataTitle = title
-                    resetChordDisplay()
+                    // A metadata title change clears visible history without
+                    // invalidating the Visualizer listener that is still capturing audio.
+                    resetChordDisplay(invalidateAnalysis = false)
                 }
 
                 // StreamTitle belongs only in the now-playing header.
@@ -2212,32 +2215,33 @@ class MainActivity : Activity() {
     private fun updateDetectedChord(chord: String) {
         val now = SystemClock.elapsedRealtime()
 
-        if (candidateChord == chord) {
-            candidateChordFrames++
-        } else {
-            candidateChord = chord
-            candidateChordFrames = 1
-            candidateChordSinceMs = now
-        }
+        // FFT estimates can flicker between adjacent candidates. Vote over a
+        // short rolling window instead of requiring perfectly consecutive frames.
+        recentChordCandidates.add(chord to now)
+        recentChordCandidates.removeAll { now - it.second > 1100L }
 
-        // Accept only a chord that remains stable across several FFT frames.
-        // The minimum interval follows the estimated beat instead of using a
-        // fixed 850 ms delay for every song.
-        val stableLongEnough = candidateChordFrames >= 5 &&
-            now - candidateChordSinceMs >= 240L
-        val minimumChangeInterval = (estimatedBeatIntervalMs * 0.45)
+        val voteGroups = recentChordCandidates.groupBy { it.first }
+        val winner = voteGroups.maxByOrNull { entry ->
+            entry.value.size * 1000000L + (entry.value.maxOfOrNull { it.second } ?: 0L)
+        } ?: return
+        val winningChord = winner.key
+        val winningVotes = winner.value.size
+        val firstWinningVote = winner.value.minOfOrNull { it.second } ?: now
+
+        val stableLongEnough = winningVotes >= 3 && now - firstWinningVote >= 140L
+        val minimumChangeInterval = (estimatedBeatIntervalMs * 0.30)
             .toLong()
-            .coerceIn(220L, 480L)
+            .coerceIn(170L, 340L)
         val changeCooldownPassed = lastDisplayedChordMs == 0L ||
             now - lastDisplayedChordMs >= minimumChangeInterval
 
-        // A sustained chord is one chord, not five separate history entries.
-        // Advance the five-slot sequence only when the detected chord really changes.
-        if (stableLongEnough && changeCooldownPassed && chord != displayedChord) {
-            displayedChord = chord
+        if (stableLongEnough && changeCooldownPassed && winningChord != displayedChord) {
+            displayedChord = winningChord
             lastDisplayedChordMs = now
-
-            chordHistory.add(chord)
+            candidateChord = winningChord
+            candidateChordFrames = winningVotes
+            candidateChordSinceMs = firstWinningVote
+            chordHistory.add(winningChord)
             while (chordHistory.size > 5) chordHistory.removeAt(0)
             renderChordHistory(animate = true)
         }
@@ -2302,11 +2306,12 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun resetChordDisplay() {
-        chordAnalysisGeneration++
+    private fun resetChordDisplay(invalidateAnalysis: Boolean = true) {
+        if (invalidateAnalysis) chordAnalysisGeneration++
         candidateChord = null
         candidateChordFrames = 0
         candidateChordSinceMs = 0L
+        recentChordCandidates.clear()
         displayedChord = null
         lastDisplayedChordMs = 0L
         chordHistory.clear()
