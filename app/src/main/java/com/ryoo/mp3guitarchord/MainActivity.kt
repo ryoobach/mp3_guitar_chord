@@ -2088,14 +2088,50 @@ class MainActivity : Activity() {
 
         try {
             val visualizer = Visualizer(audioSessionId)
-            visualizer.captureSize = Visualizer.getCaptureSizeRange()[1]
+            val captureSize = Visualizer.getCaptureSizeRange()[1]
+            visualizer.captureSize = captureSize
+
+            // Four or more short waveform packets are accumulated into one
+            // long PCM window. This gives the chord analyzer finer bass resolution.
+            val analysisSize = 8192
+            val pcmWindow = ByteArray(analysisSize)
+            var pcmWriteIndex = 0
+            var pcmSamplesCollected = 0
+
             visualizer.setDataCaptureListener(
                 object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(
                         visualizer: Visualizer?,
                         waveform: ByteArray?,
                         samplingRate: Int
-                    ) = Unit
+                    ) {
+                        if (analysisGeneration != chordAnalysisGeneration ||
+                            waveform == null || waveform.isEmpty()
+                        ) return
+
+                        for (sample in waveform) {
+                            pcmWindow[pcmWriteIndex] = sample
+                            pcmWriteIndex = (pcmWriteIndex + 1) % analysisSize
+                            if (pcmSamplesCollected < analysisSize) pcmSamplesCollected++
+                        }
+
+                        if (pcmSamplesCollected == analysisSize) {
+                            val orderedWindow = ByteArray(analysisSize)
+                            val firstPart = analysisSize - pcmWriteIndex
+                            System.arraycopy(pcmWindow, pcmWriteIndex, orderedWindow, 0, firstPart)
+                            if (pcmWriteIndex > 0) {
+                                System.arraycopy(pcmWindow, 0, orderedWindow, firstPart, pcmWriteIndex)
+                            }
+                            val detectedChord = ChordDetector.detectWaveform(orderedWindow, samplingRate)
+                            if (detectedChord != null) {
+                                runOnUiThread {
+                                    if (analysisGeneration == chordAnalysisGeneration) {
+                                        updateDetectedChord(detectedChord)
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     override fun onFftDataCapture(
                         visualizer: Visualizer?,
@@ -2109,14 +2145,12 @@ class MainActivity : Activity() {
                         val bars = FloatArray(48)
                         val usableBins = fft.size / 2
                         for (bar in bars.indices) {
-                            // Spread display bands across the FFT bins without integer
-                            // truncation collapsing most bars onto the same low bins.
-                            val start = (1 + (bar.toDouble() / bars.size * (usableBins - 2)).toInt())
+                            val startBin = (1 + (bar.toDouble() / bars.size * (usableBins - 2)).toInt())
                                 .coerceIn(1, usableBins - 1)
-                            val end = (start + maxOf(1, usableBins / bars.size))
+                            val endBin = (startBin + maxOf(1, usableBins / bars.size))
                                 .coerceAtMost(usableBins)
                             var peak = 0.0
-                            for (bin in start until end) {
+                            for (bin in startBin until endBin) {
                                 val real = fft[2 * bin].toDouble()
                                 val imaginary = fft[2 * bin + 1].toDouble()
                                 peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
@@ -2124,7 +2158,6 @@ class MainActivity : Activity() {
                             bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
                         }
                         updateBeatTempo(fft, samplingRate)
-                        val detectedChord = ChordDetector.detect(fft, samplingRate)
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
                         val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
                         runOnUiThread {
@@ -2133,15 +2166,13 @@ class MainActivity : Activity() {
                             if (trackDuration > 0) {
                                 progressBar.recordSpectrum(playbackPosition, trackDuration, bars)
                             } else {
-                                // 인터넷 방송은 전체 길이가 없으므로 최근 분석 기록을 왼쪽부터 누적합니다.
                                 progressBar.recordLiveSpectrum(bars)
                             }
-                            if (detectedChord != null) updateDetectedChord(detectedChord)
                         }
                     }
                 },
                 (Visualizer.getMaxCaptureRate() / 2).coerceAtLeast(1000),
-                false,
+                true,
                 true
             )
             visualizer.enabled = true
