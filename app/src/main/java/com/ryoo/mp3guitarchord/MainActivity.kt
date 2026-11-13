@@ -1330,30 +1330,27 @@ class MainActivity : Activity() {
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
                     android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setPadding(paddingLeft, paddingTop, dp(52), paddingBottom)
         }
 
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(4))
-
+        val inputFrame = FrameLayout(this).apply {
+            val fieldBackground = input.background
             addView(
                 input,
-                LinearLayout.LayoutParams(0, dp(52), 1f)
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    dp(52)
+                )
             )
 
             val historyButton = TextView(this@MainActivity).apply {
                 text = "▼"
-                textSize = 16f
+                textSize = 15f
                 gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
                 contentDescription = "저장된 방송 주소 목록 열기"
                 isClickable = true
                 isFocusable = true
-                background = roundedBackground(
-                    Color.rgb(35, 65, 88),
-                    Color.rgb(64, 103, 130)
-                )
                 setOnClickListener {
                     val history = loadRadioAddressHistory()
                     if (history.isEmpty()) {
@@ -1376,15 +1373,25 @@ class MainActivity : Activity() {
             }
             addView(
                 historyButton,
-                LinearLayout.LayoutParams(dp(48), dp(48)).apply {
-                    marginStart = dp(8)
-                }
+                FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL)
+            )
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+            addView(
+                inputFrame,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(52)
+                )
             )
         }
 
         AlertDialog.Builder(this)
             .setView(content)
-            .setPositiveButton("추가") { _, _ ->
+            .setPositiveButton("확인") { _, _ ->
                 addStream(input.text.toString().trim())
             }
             .setNegativeButton("취소", null)
