@@ -2515,7 +2515,12 @@ private class IcyMetadataReader(
                         if (metadataLength <= 0) continue
                         val metadata = ByteArray(metadataLength)
                         if (!readFully(input, metadata, metadataLength)) break
-                        val raw = metadata.toString(Charsets.UTF_8)
+                        val declaredCharset = localConnection.getContentType()
+                            ?.substringAfter("charset=", "")
+                            ?.substringBefore(';')
+                            ?.trim()
+                            ?.trim('"', '\'')
+                        val raw = decodeIcyMetadata(metadata, declaredCharset)
                             .trim('\u0000', ' ', '\r', '\n', '\t')
                         if (raw.isEmpty()) continue
                         val match = Regex("(?i)StreamTitle\\s*=\\s*['\\\"]([^'\\\"]*)['\\\"]")
@@ -2535,6 +2540,51 @@ private class IcyMetadataReader(
             isDaemon = true
             start()
         }
+    }
+
+
+    /**
+     * Radio stations do not all use UTF-8 for ICY metadata. Korean stations
+     * commonly send MS949/EUC-KR bytes, so try the declared charset and rank
+     * valid decodings by readable Hangul before falling back to UTF-8.
+     */
+    private fun decodeIcyMetadata(bytes: ByteArray, declaredCharset: String?): String {
+        val candidates = linkedSetOf<String>()
+        if (!declaredCharset.isNullOrBlank()) candidates.add(declaredCharset)
+        candidates.add("UTF-8")
+        candidates.add("MS949")
+        candidates.add("EUC-KR")
+        candidates.add("ISO-8859-1")
+
+        var bestText = ""
+        var bestScore = Int.MIN_VALUE
+
+        for (charsetName in candidates) {
+            val decoded = try {
+                val decoder = java.nio.charset.Charset.forName(charsetName)
+                    .newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            } catch (_: Exception) {
+                continue
+            }
+
+            val trimmed = decoded.trim('\u0000', ' ', '\r', '\n', '\t')
+            if (trimmed.isEmpty()) continue
+
+            val hangulCount = trimmed.count { it in '\uAC00'..'\uD7A3' }
+            val replacementCount = trimmed.count { it == '\uFFFD' }
+            val controlCount = trimmed.count { it.isISOControl() && it !in "\\r\\n\\t" }
+            val score = hangulCount * 8 - replacementCount * 20 - controlCount * 5
+
+            if (score > bestScore) {
+                bestScore = score
+                bestText = trimmed
+            }
+        }
+
+        return bestText
     }
 
     private fun readFully(input: java.io.InputStream, buffer: ByteArray, count: Int): Boolean {
