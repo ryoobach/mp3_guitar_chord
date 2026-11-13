@@ -13,6 +13,61 @@ object ChordDetector {
     private val minor = intArrayOf(0, 3, 7)
     private const val FFT_SIZE = 8192
 
+    /**
+     * Detects chords directly from Android Visualizer's FFT packets.
+     * FFT bytes are signed real/imaginary pairs; samplingRateMilliHz is
+     * converted to Hz and bins are mapped to musical pitch classes.
+     */
+    fun detectFft(fft: ByteArray, samplingRateMilliHz: Int): String? {
+        if (fft.size < 32 || samplingRateMilliHz <= 0) return null
+        val sampleRate = samplingRateMilliHz / 1000.0
+        val binWidth = sampleRate / fft.size
+        if (binWidth <= 0.0) return null
+
+        val chroma = DoubleArray(12)
+        for (bin in 1 until fft.size / 2) {
+            val real = fft[2 * bin].toDouble()
+            val imaginary = fft[2 * bin + 1].toDouble()
+            val magnitude = hypot(real, imaginary)
+            if (magnitude <= 0.0) continue
+            val frequency = bin * binWidth
+            if (frequency !in 45.0..1400.0) continue
+            val midi = (69.0 + 12.0 * ln(frequency / 440.0) / ln(2.0)).roundToInt()
+            val noteFrequency = 440.0 * 2.0.pow((midi - 69) / 12.0)
+            val cents = abs(1200.0 * ln(frequency / noteFrequency) / ln(2.0))
+            if (cents > 65.0) continue
+            val pitchClass = ((midi % 12) + 12) % 12
+            chroma[pitchClass] += magnitude / sqrt(maxOf(1.0, frequency / 110.0))
+        }
+
+        val total = chroma.sum()
+        if (total < 1.0) return null
+        val normalized = DoubleArray(12) { chroma[it] / total }
+        var bestName: String? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+        var secondScore = Double.NEGATIVE_INFINITY
+
+        for (root in 0 until 12) {
+            for ((quality, intervals) in arrayOf("" to major, "m" to minor)) {
+                val rootEnergy = normalized[root]
+                val thirdEnergy = normalized[(root + intervals[1]) % 12]
+                val fifthEnergy = normalized[(root + intervals[2]) % 12]
+                val chordEnergy = rootEnergy + thirdEnergy + fifthEnergy
+                val coverage = minOf(rootEnergy, thirdEnergy, fifthEnergy)
+                val outsideEnergy = (1.0 - chordEnergy).coerceAtLeast(0.0)
+                val score = chordEnergy * 0.72 + coverage * 1.1 - outsideEnergy * 0.18
+                if (score > bestScore) {
+                    secondScore = bestScore
+                    bestScore = score
+                    bestName = noteNames[root] + quality
+                } else if (score > secondScore) {
+                    secondScore = score
+                }
+            }
+        }
+        return if (bestScore >= 0.28 && bestScore - secondScore >= 0.001) bestName else null
+    }
+
     /** waveform is Android Visualizer's unsigned 8-bit PCM, sampling rate in millihertz. */
     fun detectWaveform(waveform: ByteArray, samplingRateMilliHz: Int): String? {
         if (waveform.size != FFT_SIZE || samplingRateMilliHz <= 0) return null

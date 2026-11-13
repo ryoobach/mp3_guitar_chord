@@ -2103,13 +2103,6 @@ class MainActivity : Activity() {
             val captureSize = Visualizer.getCaptureSizeRange()[1]
             visualizer.captureSize = captureSize
 
-            // Four or more short waveform packets are accumulated into one
-            // long PCM window. This gives the chord analyzer finer bass resolution.
-            val analysisSize = 8192
-            val pcmWindow = ByteArray(analysisSize)
-            var pcmWriteIndex = 0
-            var pcmSamplesCollected = 0
-
             visualizer.setDataCaptureListener(
                 object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(
@@ -2117,32 +2110,7 @@ class MainActivity : Activity() {
                         waveform: ByteArray?,
                         samplingRate: Int
                     ) {
-                        if (analysisGeneration != chordAnalysisGeneration ||
-                            waveform == null || waveform.isEmpty()
-                        ) return
-
-                        for (sample in waveform) {
-                            pcmWindow[pcmWriteIndex] = sample
-                            pcmWriteIndex = (pcmWriteIndex + 1) % analysisSize
-                            if (pcmSamplesCollected < analysisSize) pcmSamplesCollected++
-                        }
-
-                        if (pcmSamplesCollected == analysisSize) {
-                            val orderedWindow = ByteArray(analysisSize)
-                            val firstPart = analysisSize - pcmWriteIndex
-                            System.arraycopy(pcmWindow, pcmWriteIndex, orderedWindow, 0, firstPart)
-                            if (pcmWriteIndex > 0) {
-                                System.arraycopy(pcmWindow, 0, orderedWindow, firstPart, pcmWriteIndex)
-                            }
-                            val detectedChord = ChordDetector.detectWaveform(orderedWindow, samplingRate)
-                            if (detectedChord != null) {
-                                runOnUiThread {
-                                    if (analysisGeneration == chordAnalysisGeneration) {
-                                        updateDetectedChord(detectedChord)
-                                    }
-                                }
-                            }
-                        }
+                        // Chord analysis uses the actual FFT packets below.
                     }
 
                     override fun onFftDataCapture(
@@ -2154,6 +2122,14 @@ class MainActivity : Activity() {
                             fft == null || fft.size < 8
                         ) return
                         lastFftReceivedMs = SystemClock.elapsedRealtime()
+                        val detectedChord = ChordDetector.detectFft(fft, samplingRate)
+                        if (detectedChord != null) {
+                            runOnUiThread {
+                                if (analysisGeneration == chordAnalysisGeneration) {
+                                    updateDetectedChord(detectedChord)
+                                }
+                            }
+                        }
                         val bars = FloatArray(48)
                         val usableBins = fft.size / 2
                         for (bar in bars.indices) {
