@@ -55,17 +55,10 @@ jobs:
           mv "$APK_SOURCE" "$APK_TARGET"
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Package APK in ZIP
-        shell: bash
-        run: |
-          cd app/build/outputs/apk/debug
-          zip -j Easy-MP3-Guitar-Chord-v${{ steps.version.outputs.name }}.zip Easy-MP3-Guitar-Chord-v${{ steps.version.outputs.name }}.apk
-          unzip -t Easy-MP3-Guitar-Chord-v${{ steps.version.outputs.name }}.zip
-
-      - name: Upload APK ZIP
+      - name: Upload APK as ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: Easy-MP3-Guitar-Chord-v${{ steps.version.outputs.name }}
-          path: app/build/outputs/apk/debug/Easy-MP3-Guitar-Chord-v*.zip
+          path: app/build/outputs/apk/debug/Easy-MP3-Guitar-Chord-v*.apk
           if-no-files-found: error
           retention-days: 14
