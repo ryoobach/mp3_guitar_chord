@@ -102,6 +102,25 @@ class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    // Restarts the platform Visualizer if Android stops delivering FFT packets
+    // while the track is still playing. The chord history is preserved.
+    private val chordVisualizerWatchdog = object : Runnable {
+        override fun run() {
+            val mp = player
+            if (mp != null && isPrepared) {
+                val isPlayingNow = try { mp.isPlaying } catch (_: Exception) { false }
+                if (isPlayingNow) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (lastFftReceivedMs == 0L || now - lastFftReceivedMs > 3500L) {
+                        lastFftReceivedMs = now
+                        attachAudioVisualizer(mp.audioSessionId)
+                    }
+                }
+            }
+            handler.postDelayed(this, 1500L)
+        }
+    }
+
     private val updateTask = object : Runnable {
         override fun run() {
             val mp = player
@@ -570,8 +589,14 @@ class MainActivity : Activity() {
                     updateProgressPercent(position, player?.duration ?: 0)
                 }
             }
-            setOnSeekFinished { position ->                if (isPrepared && (player?.duration ?: 0) > 0) {
-                    player?.seekTo(position)
+            setOnSeekFinished { position ->
+                val mp = player
+                if (isPrepared && mp != null && mp.duration > 0) {
+                    val previousPosition = mp.currentPosition
+                    mp.seekTo(position)
+                    if (position < previousPosition) {
+                        resetAndRestartChordAnalysis(mp)
+                    }
                 }
                 isSeeking = false
             }
@@ -1331,7 +1356,6 @@ class MainActivity : Activity() {
         }
 
         val inputFrame = FrameLayout(this).apply {
-            val fieldBackground = input.background
             addView(
                 input,
                 FrameLayout.LayoutParams(
@@ -1340,12 +1364,16 @@ class MainActivity : Activity() {
                 )
             )
 
+            // ▼는 입력창 바깥이 아니라 입력창 내부 맨 오른쪽에 둡니다.
             val historyButton = TextView(this@MainActivity).apply {
                 text = "▼"
                 textSize = 15f
                 gravity = Gravity.CENTER
                 setTextColor(Color.rgb(30, 55, 78))
-                background = roundedBackground(Color.rgb(225, 237, 246), Color.rgb(150, 175, 195))
+                background = roundedBackground(
+                    Color.rgb(225, 237, 246),
+                    Color.rgb(150, 175, 195)
+                )
                 contentDescription = "저장된 방송 주소 목록 열기"
                 isClickable = true
                 isFocusable = true
@@ -1358,26 +1386,31 @@ class MainActivity : Activity() {
                             Toast.LENGTH_SHORT
                         ).show()
                     } else {
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle("최근 방송 주소")
-                            .setItems(history.toTypedArray()) { _, which ->
-                                input.setText(history[which])
+                        val popup = PopupMenu(this@MainActivity, this)
+                        history.forEachIndexed { index, address ->
+                            popup.menu.add(0, index, index, address)
+                        }
+                        popup.setOnMenuItemClickListener { item ->
+                            val selected = history.getOrNull(item.itemId)
+                            if (selected != null) {
+                                input.setText(selected)
                                 input.setSelection(input.text.length)
                             }
-                            .setNegativeButton("닫기", null)
-                            .show()
+                            true
+                        }
+                        popup.show()
                     }
                 }
             }
             addView(
                 historyButton,
-                FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END or Gravity.CENTER_VERTICAL)
+                FrameLayout.LayoutParams(dp(44), dp(48), Gravity.END or Gravity.CENTER_VERTICAL)
             )
         }
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(4))
+            setPadding(dp(20), dp(12), dp(20), dp(8))
             addView(
                 inputFrame,
                 LinearLayout.LayoutParams(
@@ -1385,15 +1418,52 @@ class MainActivity : Activity() {
                     dp(52)
                 )
             )
+
+            val buttonRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                setPadding(0, dp(12), 0, 0)
+            }
+            val cancelButton = makeButton("취소")
+            val confirmButton = makeButton("확인")
+            buttonRow.addView(
+                cancelButton,
+                LinearLayout.LayoutParams(dp(76), dp(40)).apply {
+                    setMargins(dp(4), 0, dp(6), 0)
+                }
+            )
+            buttonRow.addView(
+                confirmButton,
+                LinearLayout.LayoutParams(dp(76), dp(40)).apply {
+                    setMargins(dp(4), 0, 0, 0)
+                }
+            )
+            addView(
+                buttonRow,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(52)
+                )
+            )
         }
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("인터넷 방송 주소")
             .setView(content)
-            .setPositiveButton("확인") { _, _ ->
-                addStream(input.text.toString().trim())
+            .create()
+
+        cancelButtonListener@ run {
+            val buttonRow = content.getChildAt(1) as LinearLayout
+            (buttonRow.getChildAt(0) as Button).setOnClickListener {
+                dialog.dismiss()
             }
-            .setNegativeButton("취소", null)
-            .show()
+            (buttonRow.getChildAt(1) as Button).setOnClickListener {
+                addStream(input.text.toString().trim())
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
     }
     private fun loadRadioAddressHistory(): List<String> {
         val saved = getSharedPreferences("player_settings", MODE_PRIVATE)
@@ -1891,6 +1961,8 @@ class MainActivity : Activity() {
                 prepared.start()
                 lastFftReceivedMs = 0L
                 attachAudioVisualizer(prepared.audioSessionId)
+                handler.removeCallbacks(chordVisualizerWatchdog)
+                handler.postDelayed(chordVisualizerWatchdog, 1500L)
                 handler.postDelayed({
                     if (player === prepared && isPrepared && prepared.isPlaying &&
                         lastFftReceivedMs == 0L &&
@@ -1971,6 +2043,7 @@ class MainActivity : Activity() {
                 mp.seekTo(0)
                 progressBar.setPosition(0)
                 updateTimeDisplay(0, mp.duration)
+                resetAndRestartChordAnalysis(mp)
                 playButton.text = "▶"
 
             } catch (_: Exception) {
@@ -2223,8 +2296,16 @@ class MainActivity : Activity() {
                             fft == null || fft.size < 8
                         ) return
                         lastFftReceivedMs = SystemClock.elapsedRealtime()
-                        val detectedChord = ChordDetector.detectFft(fft, samplingRate)
-                        val hasAudioSignal = ChordDetector.hasAudioSignal(fft)
+                        val detectedChord = try {
+                            ChordDetector.detectFft(fft, samplingRate)
+                        } catch (_: Exception) {
+                            null
+                        }
+                        val hasAudioSignal = try {
+                            ChordDetector.hasAudioSignal(fft)
+                        } catch (_: Exception) {
+                            false
+                        }
                         runOnUiThread {
                             if (analysisGeneration != chordAnalysisGeneration) return@runOnUiThread
                             if (detectedChord != null) {
@@ -2262,7 +2343,7 @@ class MainActivity : Activity() {
                         }
                     }
                 },
-                (Visualizer.getMaxCaptureRate() / 2).coerceAtLeast(1000),
+                (Visualizer.getMaxCaptureRate() / 4).coerceAtLeast(1000),
                 true,
                 true
             )
@@ -2440,6 +2521,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun resetAndRestartChordAnalysis(mp: MediaPlayer) {
+        resetChordDisplay()
+        lastFftReceivedMs = 0L
+        handler.postDelayed({
+            if (player === mp && isPrepared) {
+                attachAudioVisualizer(mp.audioSessionId)
+            }
+        }, 250L)
+    }
+
     private fun resetChordDisplay(invalidateAnalysis: Boolean = true) {
         if (invalidateAnalysis) chordAnalysisGeneration++
         candidateChord = null        candidateChordFrames = 0
@@ -2519,6 +2610,7 @@ class MainActivity : Activity() {
 
     private fun releaseCurrentPlayer() {
 
+        handler.removeCallbacks(chordVisualizerWatchdog)
         icyMetadataReader?.stop()
         icyMetadataReader = null
         releaseAudioVisualizer()
