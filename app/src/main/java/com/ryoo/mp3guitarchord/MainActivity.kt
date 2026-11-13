@@ -2578,7 +2578,7 @@ private class IcyMetadataReader(
 
             val hangulCount = trimmed.count { it in '\uAC00'..'\uD7A3' }
             val replacementCount = trimmed.count { it == '\uFFFD' }
-            val controlCount = trimmed.count { it.isISOControl() && it !in listOf('\\r', '\\n', '\\t') }
+            val controlCount = trimmed.count { it.isISOControl() && it !in listOf('\r', '\n', '\t') }
             val score = hangulCount * 8 - replacementCount * 20 - controlCount * 5
 
             if (score > bestScore) {
