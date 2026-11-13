@@ -1299,11 +1299,9 @@ class MainActivity : Activity() {
     private fun showUrlDialog() {
 
         val input = EditText(this).apply {
-            val saved = getSharedPreferences("player_settings", MODE_PRIVATE)
-                .getString("last_stream_url", "http://live09.inlive.co.kr:11640")
-            setText(saved)
-            setSelection(text.length)
-            hint = "http://live09.inlive.co.kr:11640"
+            // 방송 주소는 기본값이나 이전 입력값을 자동으로 채우지 않습니다.
+            setText("")
+            hint = "방송 주소를 입력하세요"
             setSingleLine(true)
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
