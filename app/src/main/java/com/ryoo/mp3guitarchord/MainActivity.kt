@@ -32,6 +32,8 @@ import android.widget.*
 import java.util.Locale
 import java.net.HttpURLConnection
 import java.net.URL
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
 
@@ -99,6 +101,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        restorePlaylist()
         configureSystemBars()
         createScreen()
         updateModeButtons()
@@ -1322,6 +1325,8 @@ class MainActivity : Activity() {
             adapter.notifyDataSetChanged()
         }
 
+        savePlaylist()
+
         Toast.makeText(
             this,
             "인터넷 방송을 추가했습니다.",
@@ -1446,6 +1451,8 @@ class MainActivity : Activity() {
                 adapter.notifyDataSetChanged()
             }
 
+            savePlaylist()
+
             Toast.makeText(
                 this,
                 "${validAudioFiles.size}개 오디오 파일을 불러왔습니다.",
@@ -1499,6 +1506,7 @@ class MainActivity : Activity() {
         releaseCurrentPlayer()
 
         currentIndex = index
+        savePlaylist()
         setScrollingSongTitle(songNames[index])
 
         playButton.text = "…"
@@ -1819,6 +1827,8 @@ class MainActivity : Activity() {
         )
         adapter.notifyDataSetChanged()
 
+        savePlaylist()
+
         Toast.makeText(
             this,
             "${removeIndexes.size}개 항목을 삭제했습니다.",
@@ -1834,6 +1844,7 @@ class MainActivity : Activity() {
                 setScrollingSongTitle(title)
                 songNames[currentIndex] = title
                 adapter.notifyDataSetChanged()
+                savePlaylist()
             }
         }
         icyMetadataReader = reader
@@ -2036,6 +2047,67 @@ class MainActivity : Activity() {
         player = null
     }
 
+    /**
+     * Saves playlist URIs, display names and the selected row between launches.
+     * SAF document URIs are retained only when Android granted persistent access.
+     */
+    private fun savePlaylist() {
+        try {
+            val entries = JSONArray()
+            for (index in playlist.indices) {
+                entries.put(JSONObject().apply {
+                    put("uri", playlist[index].toString())
+                    put("name", songNames.getOrNull(index).orEmpty())
+                })
+            }
+            getSharedPreferences("player_settings", MODE_PRIVATE).edit()
+                .putString("saved_playlist", entries.toString())
+                .putInt("saved_current_index", currentIndex)
+                .apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Restores saved entries before the playlist adapter is created. */
+    private fun restorePlaylist() {
+        val preferences = getSharedPreferences("player_settings", MODE_PRIVATE)
+        val saved = preferences.getString("saved_playlist", null) ?: return
+        try {
+            val entries = JSONArray(saved)
+            val persistedUris = contentResolver.persistedUriPermissions
+                .filter { it.isReadPermission }
+                .map { it.uri.toString() }
+                .toSet()
+
+            for (index in 0 until entries.length()) {
+                val entry = entries.optJSONObject(index) ?: continue
+                val uriText = entry.optString("uri")
+                if (uriText.isBlank()) continue
+
+                val uri = Uri.parse(uriText)
+                val isStream = uri.scheme == "http" || uri.scheme == "https"
+                if (!isStream && uriText !in persistedUris) continue
+
+                if (!playlist.contains(uri)) {
+                    val savedName = entry.optString("name")
+                    playlist.add(uri)
+                    songNames.add(savedName.ifBlank {
+                        if (isStream) "RADIO | ${uri.host ?: "인터넷 방송"}"
+                        else getFileName(uri)
+                    })
+                }
+            }
+
+            currentIndex = preferences.getInt("saved_current_index", -1)
+                .takeIf { it in playlist.indices }
+                ?: if (playlist.isNotEmpty()) 0 else -1
+        } catch (_: Exception) {
+            playlist.clear()
+            songNames.clear()
+            currentIndex = -1
+        }
+    }
+
     private fun formatTime(milliseconds: Int): String {
 
         val seconds =
@@ -2054,6 +2126,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
 
+        savePlaylist()
         handler.removeCallbacks(updateTask)
         releaseCurrentPlayer()
 
