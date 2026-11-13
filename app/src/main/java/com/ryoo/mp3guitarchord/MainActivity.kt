@@ -86,6 +86,8 @@ class MainActivity : Activity() {
     private var lastBeatPulseMs = 0L
     private val recentBeatIntervals = mutableListOf<Long>()
     @Volatile private var estimatedBeatIntervalMs = 600L
+    // 4/4 기본 박자표를 기준으로 계산한 마디 길이. 코드 변화는 마디 경계에 강제로 맞추지 않습니다.
+    @Volatile private var estimatedBarIntervalMs = 2400L
     private lateinit var analyzerView: AudioVisualizerView
     private var audioVisualizer: Visualizer? = null
     private var icyMetadataReader: IcyMetadataReader? = null
@@ -2406,6 +2408,9 @@ class MainActivity : Activity() {
                         (estimatedBeatIntervalMs * 0.35 + median * 0.65)
                             .toLong()
                             .coerceIn(350L, 1000L)
+                    // BPM으로부터 4/4 한 마디 길이를 갱신합니다.
+                    estimatedBarIntervalMs =
+                        (estimatedBeatIntervalMs * 4L).coerceIn(1400L, 4000L)
                 }
             }
             lastBeatPulseMs = now
@@ -2419,12 +2424,21 @@ class MainActivity : Activity() {
         lastChordDetectedMs = now
         if (::chordStatusText.isInitialized) chordStatusText.visibility = View.GONE
 
-        // FFT estimates can flicker between adjacent candidates. Vote over a
-        // short rolling window instead of requiring perfectly consecutive frames.
+        // FFT estimates can flicker between adjacent candidates. Confirm a chord
+        // over a tempo-scaled fraction of a beat, while retaining enough history
+        // to reject brief spectral noise. The 4/4 bar model provides the timing
+        // reference; actual chord changes are NOT snapped to bar boundaries, so
+        // syncopated/off-beat changes can still appear immediately.
+        val beatMs = estimatedBeatIntervalMs.coerceIn(350L, 1000L)
+        val barMs = estimatedBarIntervalMs.coerceIn(1400L, 4000L)
+        val candidateWindowMs = minOf(
+            (beatMs * 0.95).toLong(),
+            barMs / 4L
+        ).coerceIn(320L, 800L)
+        val stableDurationMs = (beatMs * 0.14).toLong().coerceIn(70L, 140L)
+
         recentChordCandidates.add(chord to now)
-        // A long vote window carries the previous chord into the next section.
-        // Shorten it so genuine changes in both MP3 and radio playback can surface.
-        recentChordCandidates.removeAll { now - it.second > 650L }
+        recentChordCandidates.removeAll { now - it.second > candidateWindowMs }
 
         val voteGroups = recentChordCandidates.groupBy { it.first }
         val winner = voteGroups.maxByOrNull { entry ->
@@ -2434,10 +2448,12 @@ class MainActivity : Activity() {
         val winningVotes = winner.value.size
         val firstWinningVote = winner.value.minOfOrNull { it.second } ?: now
 
-        val stableLongEnough = winningVotes >= 2 && now - firstWinningVote >= 90L
-        val minimumChangeInterval = (estimatedBeatIntervalMs * 0.22)
+        val stableLongEnough =
+            winningVotes >= 2 && now - firstWinningVote >= stableDurationMs
+        // Short cooldown preserves syncopated chord changes between strong beats.
+        val minimumChangeInterval = (beatMs * 0.18)
             .toLong()
-            .coerceIn(140L, 260L)
+            .coerceIn(100L, 220L)
         val changeCooldownPassed = lastDisplayedChordMs == 0L ||
             now - lastDisplayedChordMs >= minimumChangeInterval
 
@@ -2533,7 +2549,8 @@ class MainActivity : Activity() {
 
     private fun resetChordDisplay(invalidateAnalysis: Boolean = true) {
         if (invalidateAnalysis) chordAnalysisGeneration++
-        candidateChord = null        candidateChordFrames = 0
+        candidateChord = null
+        candidateChordFrames = 0
         candidateChordSinceMs = 0L
         recentChordCandidates.clear()
         displayedChord = null
@@ -2546,6 +2563,7 @@ class MainActivity : Activity() {
         lastBeatPulseMs = 0L
         recentBeatIntervals.clear()
         estimatedBeatIntervalMs = 600L
+        estimatedBarIntervalMs = 2400L
         if (chordSlots.isNotEmpty()) {
             chordSlots.forEach {
                 it.animate().cancel()
