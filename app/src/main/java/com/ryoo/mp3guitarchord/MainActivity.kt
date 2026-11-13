@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.graphics.Bitmap
@@ -68,6 +69,7 @@ class MainActivity : Activity() {
     private var titleMarqueeAnimator: ValueAnimator? = null
     @Volatile private var lastFftReceivedMs = 0L
     @Volatile private var lastChordDetectedMs = 0L
+    @Volatile private var lastChordDiagnosticLogMs = 0L
     private val chordSlots = mutableListOf<TextView>()
     private lateinit var chordStatusText: TextView
     private var candidateChord: String? = null
@@ -2307,6 +2309,14 @@ class MainActivity : Activity() {
                             ChordDetector.hasAudioSignal(fft)
                         } catch (_: Exception) {
                             false
+                        }
+                        val diagnosticNow = SystemClock.elapsedRealtime()
+                        if (diagnosticNow - lastChordDiagnosticLogMs >= 5000L) {
+                            lastChordDiagnosticLogMs = diagnosticNow
+                            Log.i(
+                                "EasyChord",
+                                "audioSignal=$hasAudioSignal ${ChordDetector.lastDiagnostic}"
+                            )
                         }
                         runOnUiThread {
                             if (analysisGeneration != chordAnalysisGeneration) return@runOnUiThread
