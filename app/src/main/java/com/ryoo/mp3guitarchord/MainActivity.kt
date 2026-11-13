@@ -2063,10 +2063,9 @@ class MainActivity : Activity() {
                     resetChordDisplay()
                 }
 
+                // StreamTitle belongs only in the now-playing header.
+                // Keep the playlist's saved station name and URL unchanged.
                 setScrollingSongTitle(title)
-                songNames[currentIndex] = title
-                adapter.notifyDataSetChanged()
-                savePlaylist()
             }
         }
         icyMetadataReader = reader
