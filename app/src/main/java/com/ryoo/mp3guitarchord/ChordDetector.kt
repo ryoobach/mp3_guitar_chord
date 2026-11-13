@@ -67,8 +67,9 @@ object ChordDetector {
         if (total <= 0.0 || maximum <= 0.0) return null
 
         val normalized = DoubleArray(12) { chroma[it] / total }
-        val activeTones = normalized.count { it >= 0.075 }
-        if (activeTones < 3) return null
+        // Mixed recordings often contain a dominant vocal or instrument.
+        // Do not reject a frame just because all three chord tones are not
+        // equally strong; the template scorer below evaluates the full spectrum.
 
         val bassTotal = bassChroma.sum()
         var bestName: String? = null
@@ -105,7 +106,11 @@ object ChordDetector {
         }
 
         val margin = bestScore - secondScore
-        return if (bestCoverage >= 0.055 && bestScore >= 0.42 && margin >= 0.012) bestName else null
+        // The previous confidence gate was too strict for real-world mixes:
+        // vocals, bass, compression and radio processing can mask one chord tone.
+        // Keep only a very small floor to suppress near-silence, then let the
+        // rolling vote in MainActivity stabilize the result over multiple frames.
+        return if (bestCoverage >= 0.012 && bestScore >= 0.20 && margin >= 0.002) bestName else null
     }
 
     private fun fft(real: DoubleArray, imag: DoubleArray) {
