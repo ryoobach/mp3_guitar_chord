@@ -2695,7 +2695,6 @@ private object StreamAddressResolver {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "Winamp/5.9.2")
                 setRequestProperty("Accept", "*/*")
-                setRequestProperty("Range", "bytes=0-8191")
                 setRequestProperty("Icy-MetaData", "0")
             }
 
