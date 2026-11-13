@@ -2058,13 +2058,8 @@ class MainActivity : Activity() {
                 if (player !== expectedPlayer || currentIndex !in songNames.indices) return@runOnUiThread
 
                 // Internet radio keeps one MediaPlayer alive while songs change.
-                // Clear the previous song's chord history when StreamTitle changes.
-                if (lastIcyMetadataTitle != title) {
-                    lastIcyMetadataTitle = title
-                    // A metadata title change clears visible history without
-                    // invalidating the Visualizer listener that is still capturing audio.
-                    resetChordDisplay(invalidateAnalysis = false)
-                }
+                // ICY StreamTitle can change several times during one station session.
+                // Keep chord history intact; only a new playlist item resets analysis.
 
                 // StreamTitle belongs only in the now-playing header.
                 // Keep the playlist's saved station name and URL unchanged.
@@ -2114,9 +2109,12 @@ class MainActivity : Activity() {
                         val bars = FloatArray(48)
                         val usableBins = fft.size / 2
                         for (bar in bars.indices) {
-                            val start = (1 + bar * bar / bars.size * (usableBins - 1) / bars.size)
+                            // Spread display bands across the FFT bins without integer
+                            // truncation collapsing most bars onto the same low bins.
+                            val start = (1 + (bar.toDouble() / bars.size * (usableBins - 2)).toInt())
                                 .coerceIn(1, usableBins - 1)
-                            val end = (start + (bar / 3) + 1).coerceAtMost(usableBins)
+                            val end = (start + maxOf(1, usableBins / bars.size))
+                                .coerceAtMost(usableBins)
                             var peak = 0.0
                             for (bin in start until end) {
                                 val real = fft[2 * bin].toDouble()
@@ -2168,11 +2166,12 @@ class MainActivity : Activity() {
 
         val binCount = fft.size / 2
         val sampleRateHz = samplingRateMilliHz / 1000.0
-        val nyquist = sampleRateHz / 2.0
+        val binWidthHz = sampleRateHz / fft.size
         var bassEnergy = 0.0
 
         for (bin in 1 until binCount) {
-            val frequency = bin * nyquist / (binCount - 1)
+            // Android Visualizer FFT bins are spaced at Fs / N, not Fs / (N/2 - 1).
+            val frequency = bin * binWidthHz
             if (frequency > 180.0) break
             val real = fft[2 * bin].toDouble()
             val imaginary = fft[2 * bin + 1].toDouble()

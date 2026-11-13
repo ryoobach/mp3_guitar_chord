@@ -7,11 +7,10 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Estimates a basic major/minor chord from Android Visualizer's FFT spectrum.
- *
- * The spectrum is converted to pitch-class energy using the actual FFT bin
- * width. Frequency weighting reduces the tendency of upper harmonics to
- * dominate the chord decision, while bass-note energy helps identify the root.
+ * Estimates basic major/minor triads from Android Visualizer FFT data.
+ * FFT bins are converted to pitch-class energy, then compared with all
+ * 24 major/minor templates. Non-chord energy is penalized to avoid
+ * confidently naming a chord from one dominant spectral peak.
  */
 object ChordDetector {
     private val noteNames = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -31,11 +30,11 @@ object ChordDetector {
         val chroma = DoubleArray(12)
         val bassChroma = DoubleArray(12)
 
-        // Android packs the real and imaginary values for bins 1..N/2-1
-        // into alternating bytes. Bin frequency is k * Fs / N.
+        // Android's packed FFT uses [DC, Nyquist] followed by real/imaginary
+        // pairs for bins 1..N/2-1. Frequencies are k * Fs / N.
         for (bin in 1 until binCount) {
             val frequency = bin * binWidthHz
-            if (frequency !in 45.0..1400.0) continue
+            if (frequency !in 55.0..1800.0) continue
 
             val real = fft[2 * bin].toDouble()
             val imaginary = fft[2 * bin + 1].toDouble()
@@ -46,8 +45,9 @@ object ChordDetector {
             val nearestMidi = midiValue.roundToInt()
             val semitoneDistance = abs(midiValue - nearestMidi)
 
-            // Keep some tolerance for FFT resolution and slightly detuned audio.
-            val tuningWeight = exp(-0.5 * (semitoneDistance / 0.48) * (semitoneDistance / 0.48))
+            // A wider tuning window accommodates the coarse low-frequency bins
+            // available from Android Visualizer's short FFT capture.
+            val tuningWeight = exp(-0.5 * (semitoneDistance / 0.62) * (semitoneDistance / 0.62))
             val frequencyWeight = 1.0 / sqrt(maxOf(1.0, frequency / 110.0))
             val energy = magnitude * tuningWeight * frequencyWeight
             val pitchClass = ((nearestMidi % 12) + 12) % 12
@@ -60,7 +60,9 @@ object ChordDetector {
         val maximum = chroma.maxOrNull() ?: 0.0
         if (totalEnergy <= 0.0 || maximum <= 0.0) return null
 
-        val activeNotes = chroma.count { it >= maximum * 0.12 }
+        // Ignore a spectrum dominated by a single pitch class; it cannot
+        // reliably distinguish a complete triad.
+        val activeNotes = chroma.count { it >= maximum * 0.16 }
         if (activeNotes < 2) return null
 
         val bassTotal = bassChroma.sum()
@@ -75,22 +77,25 @@ object ChordDetector {
                 val rootEnergy = chroma[root]
                 val thirdEnergy = chroma[third]
                 val fifthEnergy = chroma[fifth]
-                val chordEnergy = rootEnergy * 1.15 + thirdEnergy + fifthEnergy * 0.90
-                val nonChordEnergy = (totalEnergy - rootEnergy - thirdEnergy - fifthEnergy)
-                    .coerceAtLeast(0.0)
+                val inChord = rootEnergy + thirdEnergy + fifthEnergy
+                val outsideChord = (totalEnergy - inChord).coerceAtLeast(0.0)
+
+                val rootShare = rootEnergy / totalEnergy
+                val thirdShare = thirdEnergy / totalEnergy
+                val fifthShare = fifthEnergy / totalEnergy
+                val coverage = minOf(rootShare, thirdShare, fifthShare)
                 val bassRootBonus = if (bassTotal > 0.0) {
-                    (bassChroma[root] / bassTotal) * 0.12
+                    (bassChroma[root] / bassTotal) * 0.10
                 } else {
                     0.0
                 }
-                val missingPenalty =
-                    (if (rootEnergy < maximum * 0.10) 0.07 else 0.0) +
-                    (if (thirdEnergy < maximum * 0.10) 0.07 else 0.0) +
-                    (if (fifthEnergy < maximum * 0.10) 0.05 else 0.0)
 
-                val score = chordEnergy / totalEnergy -
-                    (nonChordEnergy / totalEnergy) * 0.20 +
-                    bassRootBonus - missingPenalty
+                // Require evidence for all three chord tones and penalize
+                // unrelated notes instead of allowing one loud note to dominate.
+                val score = (inChord / totalEnergy) -
+                    (outsideChord / totalEnergy) * 0.55 +
+                    coverage * 0.45 +
+                    bassRootBonus
 
                 if (score > bestScore) {
                     secondBestScore = bestScore
@@ -102,9 +107,7 @@ object ChordDetector {
             }
         }
 
-        // Avoid displaying a random chord when the spectrum does not contain
-        // enough evidence or two candidates are almost equally plausible.
         val confidenceMargin = bestScore - secondBestScore
-        return if (bestScore >= 0.30 && confidenceMargin >= 0.006) bestName else null
+        return if (bestScore >= 0.34 && confidenceMargin >= 0.012) bestName else null
     }
 }
