@@ -25,7 +25,7 @@ class AudioVisualizerView(context: Context) : View(context) {
         val gap = 2f * density
         val barWidth = max(1f, (width - gap * (count + 1)) / count)
         val centerY = height / 2f
-        val maxHeight = height * 0.43f
+        // Display-only scaling: keep FFT values and chord analysis untouched.\n        val maxHeight = height * 0.43f * 0.55f
 
         for (i in 0 until count) {
             val level = levels[i].coerceIn(0.03f, 1f)
