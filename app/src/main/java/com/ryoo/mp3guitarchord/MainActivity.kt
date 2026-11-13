@@ -1342,11 +1342,18 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams(0, dp(52), 1f)
             )
 
-            val historyButton = Button(this@MainActivity).apply {
-                text = "목록"
-                isAllCaps = false
-                minWidth = 0
-                setPadding(dp(8), 0, dp(8), 0)
+            val historyButton = TextView(this@MainActivity).apply {
+                text = "▼"
+                textSize = 16f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                contentDescription = "저장된 방송 주소 목록 열기"
+                isClickable = true
+                isFocusable = true
+                background = roundedBackground(
+                    Color.rgb(35, 65, 88),
+                    Color.rgb(64, 103, 130)
+                )
                 setOnClickListener {
                     val history = loadRadioAddressHistory()
                     if (history.isEmpty()) {
@@ -1369,7 +1376,7 @@ class MainActivity : Activity() {
             }
             addView(
                 historyButton,
-                LinearLayout.LayoutParams(dp(64), dp(48)).apply {
+                LinearLayout.LayoutParams(dp(48), dp(48)).apply {
                     marginStart = dp(8)
                 }
             )
