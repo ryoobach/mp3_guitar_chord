@@ -67,7 +67,9 @@ class MainActivity : Activity() {
     private lateinit var songTitle: TextView
     private var titleMarqueeAnimator: ValueAnimator? = null
     @Volatile private var lastFftReceivedMs = 0L
+    @Volatile private var lastChordDetectedMs = 0L
     private val chordSlots = mutableListOf<TextView>()
+    private lateinit var chordStatusText: TextView
     private var candidateChord: String? = null
     private var candidateChordFrames = 0
     private var candidateChordSinceMs = 0L
@@ -443,11 +445,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
 
-        // 최근 검출된 코드 5개를 왼쪽에서 오른쪽으로 흘러가듯 표시합니다.
-        repeat(5) { index ->
+        // 최근 검출된 코드 7개를 시간순으로 표시합니다.
+        repeat(7) { index ->
             val slot = TextView(this).apply {
                 text = "—"
-                textSize = if (index == 2) chordFontSize else chordFontSize * 0.78f
+                textSize = if (index == 6) chordFontSize else chordFontSize * 0.72f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setTextColor(
@@ -464,8 +466,32 @@ class MainActivity : Activity() {
             )
         }
 
-        chordArea.addView(
+        val chordDisplayFrame = FrameLayout(this)
+        chordDisplayFrame.addView(
             chordRow,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        chordStatusText = TextView(this).apply {
+            text = "멘트 중입니다"
+            textSize = if (isCompact) 13f else 15f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(245, 190, 105))
+            includeFontPadding = false
+            visibility = View.GONE
+        }
+        chordDisplayFrame.addView(
+            chordStatusText,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        chordArea.addView(
+            chordDisplayFrame,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(if (isCompact) 44 else 50)
@@ -2121,11 +2147,13 @@ class MainActivity : Activity() {
                         ) return
                         lastFftReceivedMs = SystemClock.elapsedRealtime()
                         val detectedChord = ChordDetector.detectFft(fft, samplingRate)
-                        if (detectedChord != null) {
-                            runOnUiThread {
-                                if (analysisGeneration == chordAnalysisGeneration) {
-                                    updateDetectedChord(detectedChord)
-                                }
+                        val hasAudioSignal = ChordDetector.hasAudioSignal(fft)
+                        runOnUiThread {
+                            if (analysisGeneration != chordAnalysisGeneration) return@runOnUiThread
+                            if (detectedChord != null) {
+                                updateDetectedChord(detectedChord)
+                            } else if (hasAudioSignal) {
+                                updateNoChordStatus()
                             }
                         }
                         val bars = FloatArray(48)
@@ -2230,6 +2258,8 @@ class MainActivity : Activity() {
 
     private fun updateDetectedChord(chord: String) {
         val now = SystemClock.elapsedRealtime()
+        lastChordDetectedMs = now
+        if (::chordStatusText.isInitialized) chordStatusText.visibility = View.GONE
 
         // FFT estimates can flicker between adjacent candidates. Vote over a
         // short rolling window instead of requiring perfectly consecutive frames.
@@ -2260,36 +2290,28 @@ class MainActivity : Activity() {
             candidateChordFrames = winningVotes
             candidateChordSinceMs = firstWinningVote
             chordHistory.add(winningChord)
-            while (chordHistory.size > 5) chordHistory.removeAt(0)
+            while (chordHistory.size > 7) chordHistory.removeAt(0)
             renderChordHistory(animate = true)
         }
     }
 
     private fun renderChordHistory(animate: Boolean = false) {
-        if (chordSlots.size < 5) return
+        if (chordSlots.size < 7) return
 
-        // The newest/current chord stays in the middle. The two immediately
-        // preceding chords fill the left side; the two earlier chords fill right.
-        val count = chordHistory.size
-        val current = chordHistory.lastOrNull()
-        val slotChords = listOf(
-            chordHistory.getOrNull(count - 3),
-            chordHistory.getOrNull(count - 2),
-            current,
-            chordHistory.getOrNull(count - 4),
-            chordHistory.getOrNull(count - 5)
-        )
+        // 오래된 코드가 왼쪽, 가장 최근 코드가 오른쪽에 오도록 시간순 정렬합니다.
+        val visibleChords = chordHistory.takeLast(7)
+        val slotChords = List<String?>(7 - visibleChords.size) { null } + visibleChords
 
         chordSlots.forEachIndexed { index, slot ->
             val chord = slotChords[index]
             val hasChord = !chord.isNullOrBlank()
-            val isCurrentChord = index == 2 && hasChord
+            val isCurrentChord = index == 6 && hasChord
             slot.text = chord ?: "—"
 
             val targetAlpha = when {
                 isCurrentChord -> 1.0f
                 hasChord -> 0.82f
-                else -> 0.38f
+                else -> 0.30f
             }
 
             slot.setTextColor(
@@ -2302,8 +2324,7 @@ class MainActivity : Activity() {
 
             slot.animate().cancel()
             if (animate) {
-                // Move the history gently into place at a tempo-related speed.
-                slot.translationX = dp(10).toFloat()
+                slot.translationX = dp(8).toFloat()
                 slot.alpha = targetAlpha * 0.55f
                 slot.scaleX = if (isCurrentChord) 0.94f else 1.0f
                 slot.scaleY = if (isCurrentChord) 0.94f else 1.0f
@@ -2312,7 +2333,7 @@ class MainActivity : Activity() {
                     .alpha(targetAlpha)
                     .scaleX(if (isCurrentChord) 1.08f else 1.0f)
                     .scaleY(if (isCurrentChord) 1.08f else 1.0f)
-                    .setDuration((estimatedBeatIntervalMs * 0.42).toLong().coerceIn(180L, 360L))
+                    .setDuration((estimatedBeatIntervalMs * 0.30).toLong().coerceIn(130L, 260L))
                     .setInterpolator(DecelerateInterpolator())
                     .start()
             } else {
@@ -2320,6 +2341,18 @@ class MainActivity : Activity() {
                 slot.alpha = targetAlpha
                 slot.scaleX = if (isCurrentChord) 1.08f else 1.0f
                 slot.scaleY = if (isCurrentChord) 1.08f else 1.0f
+            }
+        }
+    }
+
+    private fun updateNoChordStatus() {
+        val now = SystemClock.elapsedRealtime()
+        // 코드가 일정 시간 검출되지 않지만 오디오 신호는 계속 들어오면
+        // 방송 진행 멘트 또는 코드가 뚜렷하지 않은 구간으로 표시합니다.
+        if (lastChordDetectedMs == 0L || now - lastChordDetectedMs >= 2400L) {
+            if (::chordStatusText.isInitialized) {
+                chordStatusText.text = "멘트 중입니다"
+                chordStatusText.visibility = View.VISIBLE
             }
         }
     }
@@ -2332,6 +2365,8 @@ class MainActivity : Activity() {
         recentChordCandidates.clear()
         displayedChord = null
         lastDisplayedChordMs = 0L
+        lastChordDetectedMs = 0L
+        if (::chordStatusText.isInitialized) chordStatusText.visibility = View.GONE
         chordHistory.clear()
         previousBassEnergy = 0.0
         smoothedBassEnergy = 0.0
