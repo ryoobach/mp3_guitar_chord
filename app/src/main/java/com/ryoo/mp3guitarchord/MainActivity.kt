@@ -2429,10 +2429,13 @@ class MainActivity : Activity() {
                 if (!playlist.contains(uri)) {
                     val savedName = entry.optString("name")
                     playlist.add(uri)
-                    songNames.add(savedName.ifBlank {
+                    // Do not restore old radio metadata that may have been saved
+                    // with the wrong character encoding. Start with a clean station label;
+                    // the live ICY title will replace it after playback begins.
+                    songNames.add(
                         if (isStream) "RADIO | ${uri.host ?: "인터넷 방송"}"
-                        else getFileName(uri)
-                    })
+                        else savedName.ifBlank { getFileName(uri) }
+                    )
                 }
             }
 
@@ -2575,7 +2578,7 @@ private class IcyMetadataReader(
 
             val hangulCount = trimmed.count { it in '\uAC00'..'\uD7A3' }
             val replacementCount = trimmed.count { it == '\uFFFD' }
-            val controlCount = trimmed.count { it.isISOControl() && it !in "\\r\\n\\t" }
+            val controlCount = trimmed.count { it.isISOControl() && it !in listOf('\\r', '\\n', '\\t') }
             val score = hangulCount * 8 - replacementCount * 20 - controlCount * 5
 
             if (score > bestScore) {
