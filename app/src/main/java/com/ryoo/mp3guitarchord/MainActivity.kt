@@ -2327,8 +2327,9 @@ class MainActivity : Activity() {
                                 updateNoChordStatus()
                             }
                         }
-                        // Logarithmic spectrum bands (Winamp-style): linear bins
-                        // over-emphasize bass and leave most treble bars almost empty.
+                        // Winamp-style logarithmic bands with frequency compensation.
+                        // Peak magnitude is used instead of RMS so sparse treble transients
+                        // are not averaged away across wide high-frequency bands.
                         val bars = FloatArray(48)
                         val binCount = fft.size / 2
                         val sampleRateHz = samplingRate / 1000.0
@@ -2346,20 +2347,19 @@ class MainActivity : Activity() {
                             val endBin = kotlin.math.ceil(upperHz / binWidthHz).toInt()
                                 .coerceIn(startBin + 1, binCount)
 
-                            var energy = 0.0
-                            var samples = 0
+                            var peak = 0.0
                             for (bin in startBin until endBin) {
                                 val real = fft[2 * bin].toDouble()
                                 val imaginary = fft[2 * bin + 1].toDouble()
-                                val magnitude = kotlin.math.sqrt(real * real + imaginary * imaginary)
-                                energy += magnitude * magnitude
-                                samples++
+                                peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
                             }
 
-                            val rms = if (samples > 0) kotlin.math.sqrt(energy / samples) else 0.0
-                            // Soft-knee scaling prevents bass bars from clipping at full height.
-                            val normalized = ((rms - 2.5) / 58.0).coerceAtLeast(0.0)
-                            bars[bar] = normalized.pow(0.62).toFloat().coerceIn(0.025f, 1f)
+                            // Compensate for the naturally weaker upper spectrum.
+                            val frequencyGain = kotlin.math.exp(lowerRatio * 2.0)
+                            val amplifiedPeak = peak * frequencyGain
+                            val normalized = kotlin.math.ln(1.0 + amplifiedPeak) /
+                                kotlin.math.ln(1.0 + 42.0 * frequencyGain)
+                            bars[bar] = normalized.pow(0.72).toFloat().coerceIn(0.025f, 1f)
                         }
                         updateBeatTempo(fft, samplingRate)
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
