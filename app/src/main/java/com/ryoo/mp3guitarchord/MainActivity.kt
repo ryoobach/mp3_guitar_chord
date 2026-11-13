@@ -849,7 +849,11 @@ class MainActivity : Activity() {
         }
 
         remove.setOnClickListener {
-            removeHighlighted()
+            if (selectionMode && selectedPlaylistItems.isNotEmpty()) {
+                removeSelected()
+            } else {
+                removeHighlighted()
+            }
         }
         remove.setOnLongClickListener {
             showActionPopup(remove, listOf(
