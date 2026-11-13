@@ -54,6 +54,7 @@ class MainActivity : Activity() {
 
     private val selectedBrowserFiles = linkedMapOf<String, Pair<Uri, String>>()
     private var browserCurrentPath = ""
+    private var folderSelectionMode = false
 
     private var player: MediaPlayer? = null
     private var currentIndex = -1
@@ -1348,7 +1349,8 @@ class MainActivity : Activity() {
     private fun showAddMenu() {
 
         val options = arrayOf(
-            "MP3 파일 추가",
+            "MP3 파일 선택",
+            "음악 폴더 전체 추가",
             "인터넷 방송 주소 추가"
         )
 
@@ -1357,7 +1359,8 @@ class MainActivity : Activity() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> openFilePicker()
-                    1 -> showUrlDialog()
+                    1 -> openFolderPicker()
+                    2 -> showUrlDialog()
                 }
             }
             .show()
@@ -1603,6 +1606,25 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun openFilePicker() {
+        folderSelectionMode = false
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
+        if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(permission), 102)
+            return
+        }
+
+        browserCurrentPath = ""
+        selectedBrowserFiles.clear()
+        showMp3Browser()
+    }
+
+    private fun openFolderPicker() {
+        folderSelectionMode = true
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
@@ -1686,9 +1708,12 @@ class MainActivity : Activity() {
         )
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("MP3 파일 선택")
+            .setTitle(if (folderSelectionMode) "음악 폴더 선택" else "MP3 파일 선택")
             .setView(content)
-            .setPositiveButton("재생목록에 추가 (${selectedBrowserFiles.size})", null)
+            .setPositiveButton(
+                if (folderSelectionMode) "현재 폴더 전체 추가" else "선택 곡 추가 (${selectedBrowserFiles.size})",
+                null
+            )
             .setNegativeButton("취소") { _, _ ->
                 selectedBrowserFiles.clear()
             }
@@ -1696,9 +1721,17 @@ class MainActivity : Activity() {
 
         dialog.setOnShowListener {
             val addButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            addButton.isEnabled = selectedBrowserFiles.isNotEmpty()
+            addButton.isEnabled = if (folderSelectionMode) {
+                queryMp3FilesInFolder(browserCurrentPath).isNotEmpty()
+            } else {
+                selectedBrowserFiles.isNotEmpty()
+            }
             addButton.setOnClickListener {
-                addSelectedBrowserFiles()
+                if (folderSelectionMode) {
+                    addAllMp3InCurrentFolder()
+                } else {
+                    addSelectedBrowserFiles()
+                }
                 selectedBrowserFiles.clear()
                 dialog.dismiss()
             }
@@ -1861,6 +1894,129 @@ class MainActivity : Activity() {
             if (addedCount > 0) "${addedCount}개 MP3 파일을 추가했습니다."
             else "새로 추가할 MP3 파일이 없습니다.",
             Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    /**
+     * Collects every MP3 in the selected folder, including nested folders.
+     * MediaStore returns stable content URIs, so the playlist can be restored
+     * on the next launch without copying the audio files.
+     */
+    private fun queryMp3FilesInFolder(path: String): List<Pair<Uri, String>> {
+        val result = mutableListOf<Pair<Uri, String>>()
+        val isModernAndroid = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val pathColumnName = if (isModernAndroid) {
+            MediaStore.MediaColumns.RELATIVE_PATH
+        } else {
+            MediaStore.Audio.Media.DATA
+        }
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            pathColumnName
+        )
+        val sortOrder = if (isModernAndroid) {
+            "${MediaStore.MediaColumns.RELATIVE_PATH} COLLATE NOCASE ASC, ${MediaStore.Audio.Media.DISPLAY_NAME} COLLATE NOCASE ASC"
+        } else {
+            "${MediaStore.Audio.Media.DATA} COLLATE NOCASE ASC"
+        }
+
+        try {
+            contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val pathColumn = cursor.getColumnIndexOrThrow(pathColumnName)
+
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameColumn) ?: continue
+                    if (!name.endsWith(".mp3", ignoreCase = true)) continue
+
+                    val storedPath = cursor.getString(pathColumn).orEmpty()
+                    val relativePath = if (isModernAndroid) {
+                        storedPath.trimStart('/')
+                    } else {
+                        val storageRoot = android.os.Environment
+                            .getExternalStorageDirectory().absolutePath.trimEnd('/') + "/"
+                        val absolutePath = storedPath
+                        val relativeFile = absolutePath.removePrefix(storageRoot)
+                        val parent = relativeFile.substringBeforeLast('/', "")
+                        if (parent.isBlank()) "" else "$parent/"
+                    }
+
+                    if (!relativePath.startsWith(path, ignoreCase = true)) continue
+
+                    val id = cursor.getLong(idColumn)
+                    val uri = Uri.withAppendedPath(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        id.toString()
+                    )
+                    result.add(uri to name)
+                }
+            }
+        } catch (_: SecurityException) {
+            Toast.makeText(
+                this,
+                "오디오 파일 접근 권한을 확인해 주세요.",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                "선택한 폴더의 MP3 목록을 읽지 못했습니다.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
+        return result
+    }
+
+    /**
+     * Inserts folder tracks directly after the currently highlighted playlist
+     * row. Existing entries are shifted down, never replaced or deleted.
+     */
+    private fun addAllMp3InCurrentFolder() {
+        val folderTracks = queryMp3FilesInFolder(browserCurrentPath)
+        val newTracks = folderTracks.filter { (uri, _) -> !playlist.contains(uri) }
+
+        if (newTracks.isEmpty()) {
+            Toast.makeText(
+                this,
+                "이 폴더에 새로 추가할 MP3 파일이 없습니다.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val insertionIndex = if (currentIndex in playlist.indices) {
+            currentIndex + 1
+        } else {
+            playlist.size
+        }
+
+        newTracks.forEachIndexed { offset, (uri, name) ->
+            val targetIndex = insertionIndex + offset
+            playlist.add(targetIndex, uri)
+            songNames.add(targetIndex, name)
+        }
+
+        if (currentIndex == -1 && playlist.isNotEmpty()) {
+            currentIndex = 0
+            setScrollingSongTitle(songNames[0])
+        }
+
+        adapter.notifyDataSetChanged()
+        savePlaylist()
+
+        Toast.makeText(
+            this,
+            "${newTracks.size}개 곡을 현재 하이라이트 다음에 추가했습니다.",
+            Toast.LENGTH_LONG
         ).show()
     }
 
