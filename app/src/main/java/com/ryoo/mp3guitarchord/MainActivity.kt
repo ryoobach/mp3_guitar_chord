@@ -414,7 +414,7 @@ class MainActivity : Activity() {
             text = "선택한 곡이 없습니다"
             textSize = if (isCompact) 12f else 15f
             typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setTextColor(Color.rgb(245, 214, 107))
             isSingleLine = true
             setHorizontallyScrolling(true)
@@ -443,11 +443,11 @@ class MainActivity : Activity() {
         repeat(5) { index ->
             val slot = TextView(this).apply {
                 text = "—"
-                textSize = if (index == 4) chordFontSize else chordFontSize * 0.78f
+                textSize = if (index == 2) chordFontSize else chordFontSize * 0.78f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setTextColor(
-                    if (index == 4) Color.rgb(85, 213, 255)
+                    if (index == 2) Color.rgb(85, 213, 255)
                     else Color.rgb(125, 151, 174)
                 )
                 includeFontPadding = false
@@ -1162,20 +1162,22 @@ class MainActivity : Activity() {
         songTitle.scrollTo(0, 0)
 
         val cleanTitle = title.trim().ifBlank { "선택한 곡이 없습니다" }
-        // Keep the real title in the TextView at all times. Android's native
-        // marquee handles clipping and continuous scrolling without blanking it.
-        songTitle.text = cleanTitle
+        // Repeat the title so even shorter names have enough width to trigger
+        // Android's native marquee. START gravity lets it move from right to left.
+        songTitle.text = "   $cleanTitle     •     $cleanTitle     •     $cleanTitle   "
+        songTitle.gravity = Gravity.START or Gravity.CENTER_VERTICAL
         songTitle.isSingleLine = true
         songTitle.setHorizontallyScrolling(true)
         songTitle.ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
         songTitle.marqueeRepeatLimit = -1
         songTitle.isFocusable = true
         songTitle.isFocusableInTouchMode = true
-        songTitle.isSelected = true
+        songTitle.isSelected = false
         songTitle.requestLayout()
         songTitle.post {
             if (::songTitle.isInitialized) {
                 songTitle.isSelected = true
+                songTitle.requestFocus()
                 songTitle.invalidate()
             }
         }
@@ -2225,28 +2227,35 @@ class MainActivity : Activity() {
     private fun renderChordHistory(animate: Boolean = false) {
         if (chordSlots.size < 5) return
 
-        // The current chord is always centered in slot three.
-        // Up to two previous chords appear to its left.
-        val visibleChords = chordHistory.takeLast(3)
-        val firstVisibleSlot = 3 - visibleChords.size
+        // The newest/current chord stays in the middle. The two immediately
+        // preceding chords fill the left side; the two earlier chords fill right.
+        val count = chordHistory.size
+        val current = chordHistory.lastOrNull()
+        val slotChords = listOf(
+            chordHistory.getOrNull(count - 3),
+            chordHistory.getOrNull(count - 2),
+            current,
+            chordHistory.getOrNull(count - 4),
+            chordHistory.getOrNull(count - 5)
+        )
 
         chordSlots.forEachIndexed { index, slot ->
-            val historyIndex = index - firstVisibleSlot
-            val hasChord = index <= 2 && historyIndex in visibleChords.indices
-            slot.text = if (hasChord) visibleChords[historyIndex] else "—"
+            val chord = slotChords[index]
+            val hasChord = !chord.isNullOrBlank()
+            val isCurrentChord = index == 2 && hasChord
+            slot.text = chord ?: "—"
 
-            val isCurrentChord = hasChord && index == 2
             val targetAlpha = when {
                 isCurrentChord -> 1.0f
-                hasChord -> 0.78f
-                else -> 0.30f
+                hasChord -> 0.82f
+                else -> 0.38f
             }
 
             slot.setTextColor(
                 when {
                     isCurrentChord -> Color.rgb(85, 213, 255)
                     hasChord -> Color.rgb(180, 199, 216)
-                    else -> Color.rgb(75, 94, 113)
+                    else -> Color.rgb(105, 125, 145)
                 }
             )
 
@@ -2265,8 +2274,8 @@ class MainActivity : Activity() {
                     .start()
             } else {
                 slot.alpha = targetAlpha
-                slot.scaleX = 1.0f
-                slot.scaleY = 1.0f
+                slot.scaleX = if (isCurrentChord) 1.08f else 1.0f
+                slot.scaleY = if (isCurrentChord) 1.08f else 1.0f
             }
         }
     }
