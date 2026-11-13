@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.provider.DocumentsContract
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -207,9 +208,9 @@ class MainActivity : Activity() {
 
         // 기타 코드 글씨를 한 번 더 눈에 띄게 축소합니다.
         val chordFontSize = when {
-            isCompact -> 17f
-            isTablet -> 21f
-            else -> 19f
+            isCompact -> 22f
+            isTablet -> 27f
+            else -> 24f
         }
 
         val root = LinearLayout(this).apply {
@@ -434,7 +435,7 @@ class MainActivity : Activity() {
             chordRow,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(if (isCompact) 38 else 44)
+                dp(if (isCompact) 44 else 50)
             )
         )
 
@@ -1358,13 +1359,34 @@ class MainActivity : Activity() {
 
     private fun openFilePicker() {
 
+        // Android 기본 파일 선택기를 열고, 처음 화면을 '다운로드' 폴더로 지정합니다.
+        // 파일 선택 화면에서 다른 폴더로 이동하거나 파일명을 검색할 수 있습니다.
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "audio/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                putExtra(
+                    DocumentsContract.EXTRA_INITIAL_URI,
+                    DocumentsContract.buildRootUri(
+                        "com.android.providers.downloads.documents",
+                        "downloads"
+                    )
+                )
+            }
         }
 
-        startActivityForResult(intent, 100)
+        try {
+            startActivityForResult(intent, 100)
+        } catch (_: Exception) {
+            // 제조사 파일 앱이 초기 폴더 지정을 지원하지 않으면 기본 선택기로 엽니다.
+            val fallbackIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "audio/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            startActivityForResult(fallbackIntent, 100)
+        }
     }
 
     @Deprecated("Deprecated in Android")
