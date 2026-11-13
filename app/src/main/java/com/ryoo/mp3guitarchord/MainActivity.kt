@@ -16,7 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
-import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -39,6 +39,15 @@ class MainActivity : Activity() {
 
     private val playlist = mutableListOf<Uri>()
     private val songNames = mutableListOf<String>()
+
+    private data class Mp3BrowserEntry(
+        val name: String,
+        val uri: Uri? = null,
+        val folderPath: String? = null
+    )
+
+    private val selectedBrowserFiles = linkedMapOf<String, Pair<Uri, String>>()
+    private var browserCurrentPath = ""
 
     private var player: MediaPlayer? = null
     private var currentIndex = -1
@@ -1363,110 +1372,290 @@ class MainActivity : Activity() {
     // --------------------------------------------------
 
     private fun openFilePicker() {
-
-        // 일부 휴대폰은 다운로드된 MP3의 MIME 형식을 오디오로 판별하지 못해
-        // audio/* 필터에서 파일을 흐리게 표시합니다. 전체 파일을 표시한 뒤
-        // 선택 결과에서 실제 오디오 파일만 걸러냅니다.
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
         }
 
-        startActivityForResult(
-            Intent.createChooser(intent, "음악 파일 선택"),
-            100
-        )
+        if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(permission), 102)
+            return
+        }
+
+        browserCurrentPath = ""
+        selectedBrowserFiles.clear()
+        showMp3Browser()
     }
 
-    @Deprecated("Deprecated in Android")
-    override fun onActivityResult(
+    override fun onRequestPermissionsResult(
         requestCode: Int,
-        resultCode: Int,
-        data: Intent?
+        permissions: Array<out String>,
+        grantResults: IntArray
     ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode != 100 ||
-            resultCode != RESULT_OK ||
-            data == null
-        ) return
-
-        val added = mutableListOf<Uri>()
-
-        try {
-            if (data.clipData != null) {
-                val clip = data.clipData!!
-
-                for (i in 0 until clip.itemCount) {
-                    added.add(clip.getItemAt(i).uri)
-                }
+        if (requestCode == 102) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
+                browserCurrentPath = ""
+                selectedBrowserFiles.clear()
+                showMp3Browser()
             } else {
-                data.data?.let { added.add(it) }
-            }
-
-            val audioExtensions = setOf(
-                "mp3", "m4a", "aac", "wav", "ogg", "oga",
-                "opus", "flac", "3gp", "amr", "wma"
-            )
-            val validAudioFiles = added.filter { uri ->
-                val mimeType = contentResolver.getType(uri)?.lowercase().orEmpty()
-                val extension = getFileName(uri)
-                    .substringAfterLast('.', "")
-                    .lowercase()
-                mimeType.startsWith("audio/") || extension in audioExtensions
-            }
-
-            if (validAudioFiles.isEmpty()) {
                 Toast.makeText(
                     this,
-                    "선택한 파일 중 재생할 수 있는 오디오 파일이 없습니다.",
+                    "MP3 파일을 보려면 오디오 파일 접근 권한이 필요합니다.",
                     Toast.LENGTH_LONG
                 ).show()
-                return
+            }
+        }
+    }
+
+    /**
+     * Displays a music-only browser. MediaStore supplies MP3 files and their
+     * containing folders, so photos, PDFs and unrelated documents never appear.
+     */
+    private fun showMp3Browser() {
+        val entries = queryMp3BrowserEntries(browserCurrentPath)
+        val labels = mutableListOf<String>()
+        val hasParent = browserCurrentPath.isNotEmpty()
+
+        if (hasParent) labels.add("⬆  상위 폴더")
+        entries.forEach { entry ->
+            if (entry.folderPath != null) {
+                labels.add("📁  ${entry.name}")
+            } else {
+                val key = entry.uri?.toString().orEmpty()
+                val checked = selectedBrowserFiles.containsKey(key)
+                labels.add("${if (checked) "☑" else "□"}  ${entry.name}")
+            }
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(4))
+        }
+
+        val location = TextView(this).apply {
+            text = if (browserCurrentPath.isBlank()) {
+                "내장 저장공간 · MP3가 있는 폴더"
+            } else {
+                "/${browserCurrentPath.trimEnd('/')}"
+            }
+            textSize = 13f
+            setTextColor(Color.LTGRAY)
+            setPadding(0, 0, 0, dp(8))
+        }
+        content.addView(location)
+
+        val listView = ListView(this)
+        content.addView(
+            listView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(350)
+            )
+        )
+
+        val emptyMessage = TextView(this).apply {
+            text = "이 위치에는 MP3 파일이 없습니다."
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(Color.LTGRAY)
+        }
+        content.addView(
+            emptyMessage,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(100)
+            )
+        )
+        listView.emptyView = emptyMessage
+        listView.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_1,
+            labels
+        )
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("MP3 파일 선택")
+            .setView(content)
+            .setPositiveButton("재생목록에 추가 (${selectedBrowserFiles.size})", null)
+            .setNegativeButton("취소") { _, _ ->
+                selectedBrowserFiles.clear()
+            }
+            .create()
+
+        dialog.setOnShowListener {
+            val addButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            addButton.isEnabled = selectedBrowserFiles.isNotEmpty()
+            addButton.setOnClickListener {
+                addSelectedBrowserFiles()
+                selectedBrowserFiles.clear()
+                dialog.dismiss()
             }
 
-            for (uri in validAudioFiles) {
+            listView.setOnItemClickListener { _, _, position, _ ->
+                if (hasParent && position == 0) {
+                    browserCurrentPath = browserCurrentPath
+                        .trimEnd('/')
+                        .substringBeforeLast('/', "")
+                        .let { if (it.isBlank()) "" else "$it/" }
+                    dialog.dismiss()
+                    showMp3Browser()
+                    return@setOnItemClickListener
+                }
 
-                try {
-                    contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                val entryIndex = position - if (hasParent) 1 else 0
+                val entry = entries.getOrNull(entryIndex) ?: return@setOnItemClickListener
+
+                if (entry.folderPath != null) {
+                    browserCurrentPath = entry.folderPath
+                } else {
+                    val uri = entry.uri ?: return@setOnItemClickListener
+                    val key = uri.toString()
+                    if (selectedBrowserFiles.containsKey(key)) {
+                        selectedBrowserFiles.remove(key)
+                    } else {
+                        selectedBrowserFiles[key] = uri to entry.name
+                    }
+                }
+
+                dialog.dismiss()
+                showMp3Browser()
+            }
+        }
+
+        dialog.show()
+    }
+
+    /**
+     * Returns only folders that contain MP3 files and MP3 files in the
+     * currently opened folder. Other media and document types are excluded.
+     */
+    private fun queryMp3BrowserEntries(path: String): List<Mp3BrowserEntry> {
+        val folders = sortedSetOf<String>(String.CASE_INSENSITIVE_ORDER)
+        val files = mutableListOf<Mp3BrowserEntry>()
+
+        val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.MediaColumns.RELATIVE_PATH
+            )
+        } else {
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATA
+            )
+        }
+
+        try {
+            contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${MediaStore.Audio.Media.DISPLAY_NAME} COLLATE NOCASE ASC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val pathColumn = cursor.getColumnIndexOrThrow(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        MediaStore.MediaColumns.RELATIVE_PATH
+                    } else {
+                        MediaStore.Audio.Media.DATA
+                    }
+                )
+
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameColumn) ?: continue
+                    if (!name.endsWith(".mp3", ignoreCase = true)) continue
+
+                    val storedPath = cursor.getString(pathColumn).orEmpty()
+                    val relativePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        storedPath.trimStart('/')
+                    } else {
+                        val storageRoot = android.os.Environment
+                            .getExternalStorageDirectory().absolutePath.trimEnd('/') + "/"
+                        val relativeFile = storedPath.removePrefix(storageRoot)
+                        val parent = relativeFile.substringBeforeLast('/', "")
+                        if (parent.isBlank()) "" else "$parent/"
+                    }
+
+                    if (!relativePath.startsWith(path, ignoreCase = true)) continue
+
+                    val remainder = relativePath.substring(path.length)
+                    if (remainder.isNotEmpty()) {
+                        val folderName = remainder.substringBefore('/')
+                        if (folderName.isNotBlank()) folders.add(folderName)
+                        continue
+                    }
+
+                    val id = cursor.getLong(idColumn)
+                    val uri = Uri.withAppendedPath(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        id.toString()
                     )
-                } catch (_: Exception) {
-                }
-
-                if (!playlist.contains(uri)) {
-                    playlist.add(uri)
-                    songNames.add(getFileName(uri))
+                    files.add(Mp3BrowserEntry(name = name, uri = uri))
                 }
             }
-
-            adapter.notifyDataSetChanged()
-
-            if (currentIndex == -1 && playlist.isNotEmpty()) {
-                currentIndex = 0
-                setScrollingSongTitle(songNames[0])
-                adapter.notifyDataSetChanged()
-            }
-
-            savePlaylist()
-
+        } catch (_: SecurityException) {
             Toast.makeText(
                 this,
-                "${validAudioFiles.size}개 오디오 파일을 불러왔습니다.",
-                Toast.LENGTH_SHORT
+                "오디오 파일 접근 권한을 확인해 주세요.",
+                Toast.LENGTH_LONG
             ).show()
-
         } catch (_: Exception) {
-
             Toast.makeText(
                 this,
-                "파일 불러오기 실패",
-                Toast.LENGTH_SHORT
+                "MP3 목록을 읽지 못했습니다.",
+                Toast.LENGTH_LONG
             ).show()
         }
+
+        val result = mutableListOf<Mp3BrowserEntry>()
+        folders.forEach { folder ->
+            result.add(
+                Mp3BrowserEntry(
+                    name = folder,
+                    folderPath = path + folder + "/"
+                )
+            )
+        }
+        result.addAll(files)
+        return result
+    }
+
+    private fun addSelectedBrowserFiles() {
+        var addedCount = 0
+
+        selectedBrowserFiles.values.forEach { (uri, name) ->
+            if (!playlist.contains(uri)) {
+                playlist.add(uri)
+                songNames.add(name)
+                addedCount++
+            }
+        }
+
+        adapter.notifyDataSetChanged()
+
+        if (currentIndex == -1 && playlist.isNotEmpty()) {
+            currentIndex = 0
+            setScrollingSongTitle(songNames[0])
+            adapter.notifyDataSetChanged()
+        }
+
+        savePlaylist()
+
+        Toast.makeText(
+            this,
+            if (addedCount > 0) "${addedCount}개 MP3 파일을 추가했습니다."
+            else "새로 추가할 MP3 파일이 없습니다.",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun getFileName(uri: Uri): String {
@@ -2078,6 +2267,13 @@ class MainActivity : Activity() {
                 .filter { it.isReadPermission }
                 .map { it.uri.toString() }
                 .toSet()
+            val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Manifest.permission.READ_MEDIA_AUDIO
+            } else {
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+            val hasMediaAudioPermission =
+                checkSelfPermission(audioPermission) == PackageManager.PERMISSION_GRANTED
 
             for (index in 0 until entries.length()) {
                 val entry = entries.optJSONObject(index) ?: continue
@@ -2086,7 +2282,8 @@ class MainActivity : Activity() {
 
                 val uri = Uri.parse(uriText)
                 val isStream = uri.scheme == "http" || uri.scheme == "https"
-                if (!isStream && uriText !in persistedUris) continue
+                val isMediaStoreAudio = uri.authority == "media" && hasMediaAudioPermission
+                if (!isStream && uriText !in persistedUris && !isMediaStoreAudio) continue
 
                 if (!playlist.contains(uri)) {
                     val savedName = entry.optString("name")
