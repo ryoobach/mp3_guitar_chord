@@ -2217,7 +2217,9 @@ class MainActivity : Activity() {
         // FFT estimates can flicker between adjacent candidates. Vote over a
         // short rolling window instead of requiring perfectly consecutive frames.
         recentChordCandidates.add(chord to now)
-        recentChordCandidates.removeAll { now - it.second > 1100L }
+        // A long vote window carries the previous chord into the next section.
+        // Shorten it so genuine changes in both MP3 and radio playback can surface.
+        recentChordCandidates.removeAll { now - it.second > 650L }
 
         val voteGroups = recentChordCandidates.groupBy { it.first }
         val winner = voteGroups.maxByOrNull { entry ->
@@ -2227,10 +2229,10 @@ class MainActivity : Activity() {
         val winningVotes = winner.value.size
         val firstWinningVote = winner.value.minOfOrNull { it.second } ?: now
 
-        val stableLongEnough = winningVotes >= 3 && now - firstWinningVote >= 140L
-        val minimumChangeInterval = (estimatedBeatIntervalMs * 0.30)
+        val stableLongEnough = winningVotes >= 2 && now - firstWinningVote >= 90L
+        val minimumChangeInterval = (estimatedBeatIntervalMs * 0.22)
             .toLong()
-            .coerceIn(170L, 340L)
+            .coerceIn(140L, 260L)
         val changeCooldownPassed = lastDisplayedChordMs == 0L ||
             now - lastDisplayedChordMs >= minimumChangeInterval
 

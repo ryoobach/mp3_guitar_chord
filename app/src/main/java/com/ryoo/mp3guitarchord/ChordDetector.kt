@@ -5,6 +5,7 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import kotlin.math.pow
 
 /**
  * Estimates basic major/minor triads from Android Visualizer FFT data.
@@ -38,8 +39,11 @@ object ChordDetector {
 
             val real = fft[2 * bin].toDouble()
             val imaginary = fft[2 * bin + 1].toDouble()
-            val magnitude = sqrt(real * real + imaginary * imaginary)
-            if (magnitude < 2.0) continue
+            val rawMagnitude = sqrt(real * real + imaginary * imaginary)
+            if (rawMagnitude < 2.0) continue
+            // Compress loud spectral peaks so a single dominant note or harmonic
+            // cannot drown out the other chord tones.
+            val magnitude = sqrt(rawMagnitude)
 
             val midiValue = 69.0 + 12.0 * (ln(frequency / 440.0) / ln(2.0))
             val nearestMidi = midiValue.roundToInt()
@@ -47,8 +51,9 @@ object ChordDetector {
 
             // A wider tuning window accommodates the coarse low-frequency bins
             // available from Android Visualizer's short FFT capture.
-            val tuningWeight = exp(-0.5 * (semitoneDistance / 0.62) * (semitoneDistance / 0.62))
-            val frequencyWeight = 1.0 / sqrt(maxOf(1.0, frequency / 110.0))
+            val tuningWeight = exp(-0.5 * (semitoneDistance / 0.72) * (semitoneDistance / 0.72))
+            // Keep upper harmonics useful while retaining some bass-root information.
+            val frequencyWeight = 1.0 / (frequency / 110.0).coerceAtLeast(1.0).pow(0.35)
             val energy = magnitude * tuningWeight * frequencyWeight
             val pitchClass = ((nearestMidi % 12) + 12) % 12
 
@@ -108,6 +113,6 @@ object ChordDetector {
         }
 
         val confidenceMargin = bestScore - secondBestScore
-        return if (bestScore >= 0.34 && confidenceMargin >= 0.012) bestName else null
+        return if (bestScore >= 0.27 && confidenceMargin >= 0.004) bestName else null
     }
 }
