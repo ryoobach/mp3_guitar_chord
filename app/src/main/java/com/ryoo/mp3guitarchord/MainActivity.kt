@@ -78,7 +78,7 @@ class MainActivity : Activity() {
     private var candidateChordSinceMs = 0L
     private val recentChordCandidates = mutableListOf<Pair<String, Long>>()
     private var displayedChord: String? = null
-    private val chordHistory = mutableListOf<String>()
+    private val chordHistory = mutableListOf<ChordEvent>()
     // Invalidates queued FFT callbacks whenever the audio track changes.
     private var chordAnalysisGeneration = 0L
     private var lastIcyMetadataTitle: String? = null
@@ -89,8 +89,11 @@ class MainActivity : Activity() {
     private var lastBeatPulseMs = 0L
     private val recentBeatIntervals = mutableListOf<Long>()
     @Volatile private var estimatedBeatIntervalMs = 600L
-    // 4/4 기본 박자표를 기준으로 계산한 마디 길이. 코드 변화는 마디 경계에 강제로 맞추지 않습니다.
+    // 4/4 마디 길이 추정값과 첫 박자 위치를 이용해 마디 경계를 계산합니다.
     @Volatile private var estimatedBarIntervalMs = 2400L
+    @Volatile private var barAnchorPositionMs = -1L
+    private data class ChordEvent(val chord: String, val positionMs: Long)
+    private lateinit var chordBarMarkerOverlay: ChordBarMarkerOverlayView
     private lateinit var analyzerView: AudioVisualizerView
     // Each frequency band keeps its own decaying peak so quiet treble is not hidden by bass energy.
     private val spectrumPeakHold = DoubleArray(48)
@@ -149,6 +152,7 @@ class MainActivity : Activity() {
                 }
             }
 
+            refreshBarMarkers()
             handler.postDelayed(this, 500)
         }
     }
@@ -494,6 +498,14 @@ class MainActivity : Activity() {
         val chordDisplayFrame = FrameLayout(this)
         chordDisplayFrame.addView(
             chordRow,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        chordBarMarkerOverlay = ChordBarMarkerOverlayView(this)
+        chordDisplayFrame.addView(
+            chordBarMarkerOverlay,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -2435,6 +2447,9 @@ class MainActivity : Activity() {
         smoothedBassEnergy = smoothedBassEnergy * 0.88 + bassEnergy * 0.12
 
         if (isOnset) {
+            if (barAnchorPositionMs < 0L) {
+                barAnchorPositionMs = currentPlaybackPositionMs()
+            }
             if (lastBeatPulseMs > 0L) {
                 val interval = now - lastBeatPulseMs
                 if (interval in 300L..1200L) {
@@ -2503,7 +2518,8 @@ class MainActivity : Activity() {
             candidateChord = winningChord
             candidateChordFrames = winningVotes
             candidateChordSinceMs = firstWinningVote
-            chordHistory.add(winningChord)
+            val eventPositionMs = currentPlaybackPositionMs()
+            chordHistory.add(ChordEvent(winningChord, eventPositionMs))
             while (chordHistory.size > 7) chordHistory.removeAt(0)
             renderChordHistory(animate = true)
         }
@@ -2513,8 +2529,9 @@ class MainActivity : Activity() {
         if (chordSlots.size < 7) return
 
         // 오래된 코드가 왼쪽, 가장 최근 코드가 오른쪽에 오도록 시간순 정렬합니다.
-        val visibleChords = chordHistory.takeLast(7)
-        val slotChords = List<String?>(7 - visibleChords.size) { null } + visibleChords
+        val visibleEvents = chordHistory.takeLast(7)
+        val slotChords = List<String?>(7 - visibleEvents.size) { null } +
+            visibleEvents.map { it.chord }
 
         chordSlots.forEachIndexed { index, slot ->
             val chord = slotChords[index]
@@ -2557,6 +2574,79 @@ class MainActivity : Activity() {
                 slot.scaleY = if (isCurrentChord) 1.08f else 1.0f
             }
         }
+        refreshBarMarkers()
+    }
+
+    /**
+     * Returns the current player timeline position. MediaPlayer's position is used
+     * rather than wall-clock time so bar markers do not drift while playback is paused.
+     */
+    private fun currentPlaybackPositionMs(): Long {
+        return try {
+            player?.currentPosition?.toLong()?.coerceAtLeast(0L) ?: 0L
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    /**
+     * Places a red line between two chord labels when a chord change coincides
+     * with a bar boundary, or through the centre of a label when the boundary
+     * occurs while that chord is being held.
+     *
+     * The phase is estimated from the first detected bass onset and the current
+     * 4/4 bar-length estimate; it is a visual guide, not a score-accurate measure parser.
+     */
+    private fun refreshBarMarkers() {
+        if (!::chordBarMarkerOverlay.isInitialized || chordSlots.size < 7) return
+
+        val events = chordHistory.takeLast(7)
+        if (events.isEmpty() || barAnchorPositionMs < 0L) {
+            chordBarMarkerOverlay.setMarkers(emptyList())
+            return
+        }
+
+        if (chordSlots.any { it.width <= 0 }) return
+
+        val firstSlotIndex = 7 - events.size
+        val nowPositionMs = currentPlaybackPositionMs()
+        val barLengthMs = estimatedBarIntervalMs.coerceIn(1400L, 4000L)
+        var boundaryMs = barAnchorPositionMs + barLengthMs
+        val markerXs = mutableListOf<Float>()
+        var safetyCount = 0
+
+        fun slotCenter(index: Int): Float {
+            val slot = chordSlots[index]
+            return slot.left + slot.width / 2f
+        }
+
+        while (boundaryMs <= nowPositionMs && safetyCount < 12) {
+            val eventAtBoundary = events.indexOfFirst {
+                kotlin.math.abs(it.positionMs - boundaryMs) <= 110L
+            }
+
+            val markerX = if (eventAtBoundary >= 0) {
+                val slotIndex = firstSlotIndex + eventAtBoundary
+                if (slotIndex > 0) {
+                    (slotCenter(slotIndex - 1) + slotCenter(slotIndex)) / 2f
+                } else {
+                    slotCenter(slotIndex)
+                }
+            } else {
+                val heldChordIndex = events.indexOfLast { it.positionMs < boundaryMs }
+                if (heldChordIndex >= 0) {
+                    slotCenter(firstSlotIndex + heldChordIndex)
+                } else {
+                    -1f
+                }
+            }
+
+            if (markerX >= 0f) markerXs.add(markerX)
+            boundaryMs += barLengthMs
+            safetyCount++
+        }
+
+        chordBarMarkerOverlay.setMarkers(markerXs.distinct())
     }
 
     private fun updateNoChordStatus() {
@@ -2598,6 +2688,10 @@ class MainActivity : Activity() {
         lastChordDetectedMs = 0L
         if (::chordStatusText.isInitialized) chordStatusText.visibility = View.GONE
         chordHistory.clear()
+        barAnchorPositionMs = -1L
+        if (::chordBarMarkerOverlay.isInitialized) {
+            chordBarMarkerOverlay.setMarkers(emptyList())
+        }
         previousBassEnergy = 0.0
         smoothedBassEnergy = 0.0
         lastBeatPulseMs = 0L
