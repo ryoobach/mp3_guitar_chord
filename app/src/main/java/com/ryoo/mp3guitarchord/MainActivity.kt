@@ -2220,22 +2220,25 @@ class MainActivity : Activity() {
             candidateChordSinceMs = now
         }
 
-        // Require a longer stable window and a minimum interval between
-        // changes so noisy FFT frames cannot make chords race by.
-        val stableLongEnough = candidateChordFrames >= 8 &&
-            now - candidateChordSinceMs >= 320L
+        // Accept only a chord that remains stable across several FFT frames.
+        // The minimum interval follows the estimated beat instead of using a
+        // fixed 850 ms delay for every song.
+        val stableLongEnough = candidateChordFrames >= 5 &&
+            now - candidateChordSinceMs >= 240L
+        val minimumChangeInterval = (estimatedBeatIntervalMs * 0.45)
+            .toLong()
+            .coerceIn(220L, 480L)
         val changeCooldownPassed = lastDisplayedChordMs == 0L ||
-            now - lastDisplayedChordMs >= 850L
+            now - lastDisplayedChordMs >= minimumChangeInterval
 
-        // Record a stable chord at a steady interval, even when the chord
-        // remains the same. This keeps all five recent-history slots populated
-        // during sustained chords instead of leaving only the center slot visible.
-        if (stableLongEnough && changeCooldownPassed) {
+        // A sustained chord is one chord, not five separate history entries.
+        // Advance the five-slot sequence only when the detected chord really changes.
+        if (stableLongEnough && changeCooldownPassed && chord != displayedChord) {
             displayedChord = chord
             lastDisplayedChordMs = now
 
             chordHistory.add(chord)
-            if (chordHistory.size > 5) chordHistory.removeAt(0)
+            while (chordHistory.size > 5) chordHistory.removeAt(0)
             renderChordHistory(animate = true)
         }
     }
@@ -2276,19 +2279,22 @@ class MainActivity : Activity() {
             )
 
             slot.animate().cancel()
-            slot.translationX = 0f
-            if (animate && isCurrentChord) {
-                slot.alpha = 0.65f
-                slot.scaleX = 0.94f
-                slot.scaleY = 0.94f
+            if (animate) {
+                // Move the history gently into place at a tempo-related speed.
+                slot.translationX = dp(10).toFloat()
+                slot.alpha = targetAlpha * 0.55f
+                slot.scaleX = if (isCurrentChord) 0.94f else 1.0f
+                slot.scaleY = if (isCurrentChord) 0.94f else 1.0f
                 slot.animate()
-                    .alpha(1.0f)
-                    .scaleX(1.0f)
-                    .scaleY(1.0f)
-                    .setDuration(420L)
+                    .translationX(0f)
+                    .alpha(targetAlpha)
+                    .scaleX(if (isCurrentChord) 1.08f else 1.0f)
+                    .scaleY(if (isCurrentChord) 1.08f else 1.0f)
+                    .setDuration((estimatedBeatIntervalMs * 0.42).toLong().coerceIn(180L, 360L))
                     .setInterpolator(DecelerateInterpolator())
                     .start()
             } else {
+                slot.translationX = 0f
                 slot.alpha = targetAlpha
                 slot.scaleX = if (isCurrentChord) 1.08f else 1.0f
                 slot.scaleY = if (isCurrentChord) 1.08f else 1.0f
