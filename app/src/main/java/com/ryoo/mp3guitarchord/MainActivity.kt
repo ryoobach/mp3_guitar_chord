@@ -1158,44 +1158,25 @@ class MainActivity : Activity() {
 
         titleMarqueeAnimator?.cancel()
         titleMarqueeAnimator = null
+        songTitle.animate().cancel()
         songTitle.scrollTo(0, 0)
 
-        val cleanTitle = title.trim()
-        if (cleanTitle.isEmpty()) {
-            songTitle.text = "선택한 곡이 없습니다"
-            return
-        }
-
-        // Android 기본 Marquee의 포커스 상태에 의존하지 않고 scrollX를 직접 움직입니다.
-        val segment = "$cleanTitle     •     "
-        songTitle.ellipsize = null
+        val cleanTitle = title.trim().ifBlank { "선택한 곡이 없습니다" }
+        // Keep the real title in the TextView at all times. Android's native
+        // marquee handles clipping and continuous scrolling without blanking it.
+        songTitle.text = cleanTitle
+        songTitle.isSingleLine = true
         songTitle.setHorizontallyScrolling(true)
-        songTitle.isSelected = false
-        songTitle.text = segment.repeat(8)
-
+        songTitle.ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+        songTitle.marqueeRepeatLimit = -1
+        songTitle.isFocusable = true
+        songTitle.isFocusableInTouchMode = true
+        songTitle.isSelected = true
+        songTitle.requestLayout()
         songTitle.post {
-            if (!::songTitle.isInitialized || songTitle.width <= 0) return@post
-
-            val segmentWidth = songTitle.paint.measureText(segment).toInt().coerceAtLeast(1)
-            val requiredRepeats = ((songTitle.width / segmentWidth) + 3).coerceAtLeast(3)
-            songTitle.text = segment.repeat(requiredRepeats)
-            songTitle.scrollTo(0, 0)
-
-            val pixelsPerSecond = dp(38).coerceAtLeast(1)
-            val travelDuration = ((segmentWidth.toDouble() / pixelsPerSecond) * 1000.0)
-                .toLong()
-                .coerceIn(2500L, 12000L)
-
-            titleMarqueeAnimator = ValueAnimator.ofInt(0, segmentWidth).apply {
-                duration = travelDuration
-                repeatCount = ValueAnimator.INFINITE
-                interpolator = LinearInterpolator()
-                addUpdateListener { animation ->
-                    if (::songTitle.isInitialized) {
-                        songTitle.scrollTo(animation.animatedValue as Int, 0)
-                    }
-                }
-                start()
+            if (::songTitle.isInitialized) {
+                songTitle.isSelected = true
+                songTitle.invalidate()
             }
         }
     }
@@ -2209,6 +2190,8 @@ class MainActivity : Activity() {
         }
     }
 
+    private var lastDisplayedChordMs = 0L
+
     private fun updateDetectedChord(chord: String) {
         val now = SystemClock.elapsedRealtime()
 
@@ -2220,18 +2203,20 @@ class MainActivity : Activity() {
             candidateChordSinceMs = now
         }
 
-        // Require a short stable window to reject rapid FFT misclassifications.
-        if (candidateChordFrames >= 3 &&
-            now - candidateChordSinceMs >= 120L &&
-            displayedChord != chord
-        ) {
+        // Require a longer stable window and a minimum interval between
+        // changes so noisy FFT frames cannot make chords race by.
+        val stableLongEnough = candidateChordFrames >= 8 &&
+            now - candidateChordSinceMs >= 320L
+        val changeCooldownPassed = lastDisplayedChordMs == 0L ||
+            now - lastDisplayedChordMs >= 850L
+
+        if (stableLongEnough && changeCooldownPassed && displayedChord != chord) {
             displayedChord = chord
+            lastDisplayedChordMs = now
 
             if (chordHistory.lastOrNull() != chord) {
                 chordHistory.add(chord)
-                if (chordHistory.size > 5) {
-                    chordHistory.removeAt(0)
-                }
+                if (chordHistory.size > 5) chordHistory.removeAt(0)
                 renderChordHistory(animate = true)
             }
         }
@@ -2240,43 +2225,48 @@ class MainActivity : Activity() {
     private fun renderChordHistory(animate: Boolean = false) {
         if (chordSlots.size < 5) return
 
-        val firstVisibleSlot = 5 - chordHistory.size
-        val duration = (estimatedBeatIntervalMs * 0.72)
-            .toLong()
-            .coerceIn(280L, 680L)
+        // The current chord is always centered in slot three.
+        // Up to two previous chords appear to its left.
+        val visibleChords = chordHistory.takeLast(3)
+        val firstVisibleSlot = 3 - visibleChords.size
 
         chordSlots.forEachIndexed { index, slot ->
             val historyIndex = index - firstVisibleSlot
-            val hasChord = historyIndex in chordHistory.indices
-            slot.text = if (hasChord) chordHistory[historyIndex] else "—"
+            val hasChord = index <= 2 && historyIndex in visibleChords.indices
+            slot.text = if (hasChord) visibleChords[historyIndex] else "—"
 
-            val isLatestChord = hasChord && index == 4
-            val targetAlpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
+            val isCurrentChord = hasChord && index == 2
+            val targetAlpha = when {
+                isCurrentChord -> 1.0f
+                hasChord -> 0.78f
+                else -> 0.30f
+            }
 
             slot.setTextColor(
                 when {
-                    isLatestChord -> Color.rgb(85, 213, 255)
+                    isCurrentChord -> Color.rgb(85, 213, 255)
                     hasChord -> Color.rgb(180, 199, 216)
                     else -> Color.rgb(75, 94, 113)
                 }
             )
 
             slot.animate().cancel()
-            if (animate) {
-                // Each slot glides in from the right with a small stagger,
-                // creating a continuous conveyor-like movement rather than a snap.
-                slot.translationX = dp(22).toFloat()
-                slot.alpha = 0.35f
+            slot.translationX = 0f
+            if (animate && isCurrentChord) {
+                slot.alpha = 0.65f
+                slot.scaleX = 0.94f
+                slot.scaleY = 0.94f
                 slot.animate()
-                    .translationX(0f)
-                    .alpha(targetAlpha)
-                    .setStartDelay(index * 32L)
-                    .setDuration(duration)
+                    .alpha(1.0f)
+                    .scaleX(1.0f)
+                    .scaleY(1.0f)
+                    .setDuration(420L)
                     .setInterpolator(DecelerateInterpolator())
                     .start()
             } else {
-                slot.translationX = 0f
                 slot.alpha = targetAlpha
+                slot.scaleX = 1.0f
+                slot.scaleY = 1.0f
             }
         }
     }
@@ -2286,6 +2276,7 @@ class MainActivity : Activity() {
         candidateChordFrames = 0
         candidateChordSinceMs = 0L
         displayedChord = null
+        lastDisplayedChordMs = 0L
         chordHistory.clear()
         previousBassEnergy = 0.0
         smoothedBassEnergy = 0.0
