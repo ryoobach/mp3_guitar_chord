@@ -73,6 +73,9 @@ class MainActivity : Activity() {
     private var candidateChordSinceMs = 0L
     private var displayedChord: String? = null
     private val chordHistory = mutableListOf<String>()
+    // Invalidates queued FFT callbacks whenever the audio track changes.
+    private var chordAnalysisGeneration = 0L
+    private var lastIcyMetadataTitle: String? = null
 
     // A lightweight bass-onset tracker estimates the beat interval for smooth chord motion.
     private var previousBassEnergy = 0.0
@@ -2048,9 +2051,18 @@ class MainActivity : Activity() {
 
     private fun startIcyMetadataReader(streamUrl: String, expectedPlayer: MediaPlayer) {
         icyMetadataReader?.stop()
+        lastIcyMetadataTitle = null
         val reader = IcyMetadataReader(streamUrl) { title ->
             runOnUiThread {
                 if (player !== expectedPlayer || currentIndex !in songNames.indices) return@runOnUiThread
+
+                // Internet radio keeps one MediaPlayer alive while songs change.
+                // Clear the previous song's chord history when StreamTitle changes.
+                if (lastIcyMetadataTitle != title) {
+                    lastIcyMetadataTitle = title
+                    resetChordDisplay()
+                }
+
                 setScrollingSongTitle(title)
                 songNames[currentIndex] = title
                 adapter.notifyDataSetChanged()
@@ -2063,6 +2075,7 @@ class MainActivity : Activity() {
 
     private fun attachAudioVisualizer(audioSessionId: Int) {
         releaseAudioVisualizer()
+        val analysisGeneration = chordAnalysisGeneration
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -2092,7 +2105,9 @@ class MainActivity : Activity() {
                         fft: ByteArray?,
                         samplingRate: Int
                     ) {
-                        if (fft == null || fft.size < 8) return
+                        if (analysisGeneration != chordAnalysisGeneration ||
+                            fft == null || fft.size < 8
+                        ) return
                         lastFftReceivedMs = SystemClock.elapsedRealtime()
                         val bars = FloatArray(48)
                         val usableBins = fft.size / 2
@@ -2113,6 +2128,7 @@ class MainActivity : Activity() {
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
                         val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
                         runOnUiThread {
+                            if (analysisGeneration != chordAnalysisGeneration) return@runOnUiThread
                             analyzerView.setSpectrum(bars)
                             if (trackDuration > 0) {
                                 progressBar.recordSpectrum(playbackPosition, trackDuration, bars)
@@ -2282,6 +2298,7 @@ class MainActivity : Activity() {
     }
 
     private fun resetChordDisplay() {
+        chordAnalysisGeneration++
         candidateChord = null
         candidateChordFrames = 0
         candidateChordSinceMs = 0L
