@@ -3,6 +3,7 @@ package com.ryoo.mp3guitarchord
 
 import android.Manifest
 import android.app.Activity
+import android.animation.ValueAnimator
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.Configuration
@@ -28,6 +29,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.view.View
 import android.view.WindowInsets
 import android.widget.*
@@ -63,6 +65,8 @@ class MainActivity : Activity() {
     private lateinit var elapsedTimeText: TextView
     private lateinit var totalTimeText: TextView
     private lateinit var songTitle: TextView
+    private var titleMarqueeAnimator: ValueAnimator? = null
+    @Volatile private var lastFftReceivedMs = 0L
     private val chordSlots = mutableListOf<TextView>()
     private var candidateChord: String? = null
     private var candidateChordFrames = 0
@@ -1151,19 +1155,47 @@ class MainActivity : Activity() {
 
     private fun setScrollingSongTitle(title: String) {
         if (!::songTitle.isInitialized) return
+
+        titleMarqueeAnimator?.cancel()
+        titleMarqueeAnimator = null
+        songTitle.scrollTo(0, 0)
+
         val cleanTitle = title.trim()
-        songTitle.text = if (cleanTitle.isEmpty()) {
-            "선택한 곡이 없습니다"
-        } else {
-            // 짧은 제목도 반드시 흐르도록 제목을 반복해 충분한 길이를 확보합니다.
-            "$cleanTitle     •     $cleanTitle     •     "
+        if (cleanTitle.isEmpty()) {
+            songTitle.text = "선택한 곡이 없습니다"
+            return
         }
+
+        // Android 기본 Marquee의 포커스 상태에 의존하지 않고 scrollX를 직접 움직입니다.
+        val segment = "$cleanTitle     •     "
+        songTitle.ellipsize = null
+        songTitle.setHorizontallyScrolling(true)
         songTitle.isSelected = false
+        songTitle.text = segment.repeat(8)
+
         songTitle.post {
-            if (::songTitle.isInitialized && songTitle.text.isNotEmpty()) {
-                songTitle.setHorizontallyScrolling(true)
-                songTitle.isSelected = true
-                songTitle.requestLayout()
+            if (!::songTitle.isInitialized || songTitle.width <= 0) return@post
+
+            val segmentWidth = songTitle.paint.measureText(segment).toInt().coerceAtLeast(1)
+            val requiredRepeats = ((songTitle.width / segmentWidth) + 3).coerceAtLeast(3)
+            songTitle.text = segment.repeat(requiredRepeats)
+            songTitle.scrollTo(0, 0)
+
+            val pixelsPerSecond = dp(38).coerceAtLeast(1)
+            val travelDuration = ((segmentWidth.toDouble() / pixelsPerSecond) * 1000.0)
+                .toLong()
+                .coerceIn(2500L, 12000L)
+
+            titleMarqueeAnimator = ValueAnimator.ofInt(0, segmentWidth).apply {
+                duration = travelDuration
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = LinearInterpolator()
+                addUpdateListener { animation ->
+                    if (::songTitle.isInitialized) {
+                        songTitle.scrollTo(animation.animatedValue as Int, 0)
+                    }
+                }
+                start()
             }
         }
     }
@@ -1741,7 +1773,17 @@ class MainActivity : Activity() {
                 // 재생을 시작한 뒤 오디오 세션에 분석기를 연결해야
                 // 일부 기기에서 FFT 데이터가 안정적으로 전달됩니다.
                 prepared.start()
+                lastFftReceivedMs = 0L
                 attachAudioVisualizer(prepared.audioSessionId)
+                // Some Android devices expose the audio session shortly after playback starts.
+                handler.postDelayed({
+                    if (player === prepared && isPrepared && prepared.isPlaying &&
+                        lastFftReceivedMs == 0L &&
+                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        attachAudioVisualizer(prepared.audioSessionId)
+                    }
+                }, 900L)
                 if (isStream) {
                     startIcyMetadataReader(uri.toString(), prepared)
                 }
@@ -2041,6 +2083,11 @@ class MainActivity : Activity() {
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Toast.makeText(
+                    this,
+                    "기타 코드 표시를 위해 오디오 분석 권한을 허용해 주세요.",
+                    Toast.LENGTH_LONG
+                ).show()
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 210)
             }
             return
@@ -2063,6 +2110,7 @@ class MainActivity : Activity() {
                         samplingRate: Int
                     ) {
                         if (fft == null || fft.size < 8) return
+                        lastFftReceivedMs = SystemClock.elapsedRealtime()
                         val bars = FloatArray(48)
                         val usableBins = fft.size / 2
                         for (bar in bars.indices) {
@@ -2311,6 +2359,8 @@ class MainActivity : Activity() {
         icyMetadataReader?.stop()
         icyMetadataReader = null
         releaseAudioVisualizer()
+        titleMarqueeAnimator?.cancel()
+        titleMarqueeAnimator = null
         isPrepared = false
 
         try {
