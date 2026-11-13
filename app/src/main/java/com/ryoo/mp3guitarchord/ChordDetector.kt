@@ -120,6 +120,7 @@ object ChordDetector {
         // Android Visualizer FFT has limited low-frequency resolution. The previous
         // strict gates rejected many genuine chords when one chord tone was weak.
         // Relax confidence gates modestly; MainActivity still confirms candidates
-        // across multiple FFT frames before displaying a chord.\n        return if (bestCoverage >= 0.004 && bestScore >= 0.16 && margin >= 0.00035) bestName else null
+        // across multiple FFT frames before displaying a chord.
+        return if (bestCoverage >= 0.004 && bestScore >= 0.16 && margin >= 0.00035) bestName else null
     }
 }
