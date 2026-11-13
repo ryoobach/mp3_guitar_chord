@@ -117,6 +117,6 @@ object ChordDetector {
             "score=${"%.3f".format(bestScore)} coverage=${"%.3f".format(bestCoverage)} " +
             "energy=${"%.3f".format(bestChordEnergy)} margin=${"%.3f".format(margin)}"
 
-        return if (bestCoverage >= 0.010 && bestScore >= 0.19 && margin >= 0.0015) bestName else null
+        // Android Visualizer FFT has limited low-frequency resolution. The previous\n        // strict gates rejected many genuine chords when one chord tone was weak.\n        // Relax confidence gates modestly; MainActivity still confirms candidates\n        // across multiple FFT frames before displaying a chord.\n        return if (bestCoverage >= 0.004 && bestScore >= 0.16 && margin >= 0.00035) bestName else null
     }
 }
