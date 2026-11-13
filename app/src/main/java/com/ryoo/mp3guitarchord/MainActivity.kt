@@ -2326,20 +2326,39 @@ class MainActivity : Activity() {
                                 updateNoChordStatus()
                             }
                         }
+                        // Logarithmic spectrum bands (Winamp-style): linear bins
+                        // over-emphasize bass and leave most treble bars almost empty.
                         val bars = FloatArray(48)
-                        val usableBins = fft.size / 2
+                        val binCount = fft.size / 2
+                        val sampleRateHz = samplingRate / 1000.0
+                        val binWidthHz = sampleRateHz / fft.size
+                        val minFrequencyHz = 35.0
+                        val maxFrequencyHz = (sampleRateHz * 0.46).coerceAtLeast(minFrequencyHz * 2.0)
+                        val logRange = kotlin.math.ln(maxFrequencyHz / minFrequencyHz)
+
                         for (bar in bars.indices) {
-                            val startBin = (1 + (bar.toDouble() / bars.size * (usableBins - 2)).toInt())
-                                .coerceIn(1, usableBins - 1)
-                            val endBin = (startBin + maxOf(1, usableBins / bars.size))
-                                .coerceAtMost(usableBins)
-                            var peak = 0.0
+                            val lowerRatio = bar.toDouble() / bars.size
+                            val upperRatio = (bar + 1).toDouble() / bars.size
+                            val lowerHz = minFrequencyHz * kotlin.math.exp(logRange * lowerRatio)
+                            val upperHz = minFrequencyHz * kotlin.math.exp(logRange * upperRatio)
+                            val startBin = (lowerHz / binWidthHz).toInt().coerceIn(1, binCount - 1)
+                            val endBin = kotlin.math.ceil(upperHz / binWidthHz).toInt()
+                                .coerceIn(startBin + 1, binCount)
+
+                            var energy = 0.0
+                            var samples = 0
                             for (bin in startBin until endBin) {
                                 val real = fft[2 * bin].toDouble()
                                 val imaginary = fft[2 * bin + 1].toDouble()
-                                peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
+                                val magnitude = kotlin.math.sqrt(real * real + imaginary * imaginary)
+                                energy += magnitude * magnitude
+                                samples++
                             }
-                            bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
+
+                            val rms = if (samples > 0) kotlin.math.sqrt(energy / samples) else 0.0
+                            // Soft-knee scaling prevents bass bars from clipping at full height.
+                            val normalized = ((rms - 2.5) / 58.0).coerceAtLeast(0.0)
+                            bars[bar] = normalized.pow(0.62).toFloat().coerceIn(0.025f, 1f)
                         }
                         updateBeatTempo(fft, samplingRate)
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
