@@ -1333,18 +1333,20 @@ class MainActivity : Activity() {
         }
 
         val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(20), dp(12), dp(20), dp(4))
+
             addView(
                 input,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(52)
-                )
+                LinearLayout.LayoutParams(0, dp(52), 1f)
             )
+
             val historyButton = Button(this@MainActivity).apply {
-                text = "최근 방송 주소 선택"
+                text = "목록"
                 isAllCaps = false
+                minWidth = 0
+                setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
                     val history = loadRadioAddressHistory()
                     if (history.isEmpty()) {
@@ -1355,6 +1357,7 @@ class MainActivity : Activity() {
                         ).show()
                     } else {
                         AlertDialog.Builder(this@MainActivity)
+                            .setTitle("최근 방송 주소")
                             .setItems(history.toTypedArray()) { _, which ->
                                 input.setText(history[which])
                                 input.setSelection(input.text.length)
@@ -1366,10 +1369,9 @@ class MainActivity : Activity() {
             }
             addView(
                 historyButton,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(44)
-                ).apply { topMargin = dp(6) }
+                LinearLayout.LayoutParams(dp(64), dp(48)).apply {
+                    marginStart = dp(8)
+                }
             )
         }
 
