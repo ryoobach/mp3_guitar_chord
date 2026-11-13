@@ -1359,34 +1359,19 @@ class MainActivity : Activity() {
 
     private fun openFilePicker() {
 
-        // Android 기본 파일 선택기를 열고, 처음 화면을 '다운로드' 폴더로 지정합니다.
-        // 파일 선택 화면에서 다른 폴더로 이동하거나 파일명을 검색할 수 있습니다.
+        // 일부 휴대폰은 다운로드된 MP3의 MIME 형식을 오디오로 판별하지 못해
+        // audio/* 필터에서 파일을 흐리게 표시합니다. 전체 파일을 표시한 뒤
+        // 선택 결과에서 실제 오디오 파일만 걸러냅니다.
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "audio/*"
+            type = "*/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                putExtra(
-                    DocumentsContract.EXTRA_INITIAL_URI,
-                    DocumentsContract.buildRootUri(
-                        "com.android.providers.downloads.documents",
-                        "downloads"
-                    )
-                )
-            }
         }
 
-        try {
-            startActivityForResult(intent, 100)
-        } catch (_: Exception) {
-            // 제조사 파일 앱이 초기 폴더 지정을 지원하지 않으면 기본 선택기로 엽니다.
-            val fallbackIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "audio/*"
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            startActivityForResult(fallbackIntent, 100)
-        }
+        startActivityForResult(
+            Intent.createChooser(intent, "음악 파일 선택"),
+            100
+        )
     }
 
     @Deprecated("Deprecated in Android")
@@ -1416,7 +1401,28 @@ class MainActivity : Activity() {
                 data.data?.let { added.add(it) }
             }
 
-            for (uri in added) {
+            val audioExtensions = setOf(
+                "mp3", "m4a", "aac", "wav", "ogg", "oga",
+                "opus", "flac", "3gp", "amr", "wma"
+            )
+            val validAudioFiles = added.filter { uri ->
+                val mimeType = contentResolver.getType(uri)?.lowercase().orEmpty()
+                val extension = getFileName(uri)
+                    .substringAfterLast('.', "")
+                    .lowercase()
+                mimeType.startsWith("audio/") || extension in audioExtensions
+            }
+
+            if (validAudioFiles.isEmpty()) {
+                Toast.makeText(
+                    this,
+                    "선택한 파일 중 재생할 수 있는 오디오 파일이 없습니다.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+
+            for (uri in validAudioFiles) {
 
                 try {
                     contentResolver.takePersistableUriPermission(
@@ -1442,7 +1448,7 @@ class MainActivity : Activity() {
 
             Toast.makeText(
                 this,
-                "${added.size}개 파일을 불러왔습니다.",
+                "${validAudioFiles.size}개 오디오 파일을 불러왔습니다.",
                 Toast.LENGTH_SHORT
             ).show()
 
