@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.graphics.Bitmap
@@ -26,6 +27,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.animation.DecelerateInterpolator
 import android.view.View
 import android.view.WindowInsets
 import android.widget.*
@@ -64,8 +66,16 @@ class MainActivity : Activity() {
     private val chordSlots = mutableListOf<TextView>()
     private var candidateChord: String? = null
     private var candidateChordFrames = 0
+    private var candidateChordSinceMs = 0L
     private var displayedChord: String? = null
     private val chordHistory = mutableListOf<String>()
+
+    // A lightweight bass-onset tracker estimates the beat interval for smooth chord motion.
+    private var previousBassEnergy = 0.0
+    private var smoothedBassEnergy = 0.0
+    private var lastBeatPulseMs = 0L
+    private val recentBeatIntervals = mutableListOf<Long>()
+    @Volatile private var estimatedBeatIntervalMs = 600L
     private lateinit var analyzerView: AudioVisualizerView
     private var audioVisualizer: Visualizer? = null
     private var icyMetadataReader: IcyMetadataReader? = null
@@ -403,8 +413,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(245, 214, 107))
             isSingleLine = true
+            setHorizontallyScrolling(true)
             ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
             marqueeRepeatLimit = -1
+            isFocusable = true
+            isFocusableInTouchMode = true
             isSelected = true
             includeFontPadding = false
         }
@@ -1145,7 +1158,14 @@ class MainActivity : Activity() {
             // 짧은 제목도 반드시 흐르도록 제목을 반복해 충분한 길이를 확보합니다.
             "$cleanTitle     •     $cleanTitle     •     "
         }
-        songTitle.isSelected = true
+        songTitle.isSelected = false
+        songTitle.post {
+            if (::songTitle.isInitialized && songTitle.text.isNotEmpty()) {
+                songTitle.setHorizontallyScrolling(true)
+                songTitle.isSelected = true
+                songTitle.requestLayout()
+            }
+        }
     }
 
     private fun resetTimeDisplay() {
@@ -1386,30 +1406,6 @@ class MainActivity : Activity() {
         browserCurrentPath = ""
         selectedBrowserFiles.clear()
         showMp3Browser()
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == 102) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            ) {
-                browserCurrentPath = ""
-                selectedBrowserFiles.clear()
-                showMp3Browser()
-            } else {
-                Toast.makeText(
-                    this,
-                    "MP3 파일을 보려면 오디오 파일 접근 권한이 필요합니다.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
     }
 
     /**
@@ -2081,6 +2077,7 @@ class MainActivity : Activity() {
                             }
                             bars[bar] = (peak / 72.0).toFloat().coerceIn(0.04f, 1f)
                         }
+                        updateBeatTempo(fft, samplingRate)
                         val detectedChord = ChordDetector.detect(fft, samplingRate)
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
                         val trackDuration = try { player?.duration ?: 0 } catch (_: Exception) { 0 }
@@ -2112,19 +2109,76 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Estimates the beat interval from low-frequency spectral onsets.
+     * It is intentionally smoothed and bounded so noisy audio cannot make
+     * the chord animation jump between extreme speeds.
+     */
+    private fun updateBeatTempo(fft: ByteArray, samplingRateMilliHz: Int) {
+        if (fft.size < 16 || samplingRateMilliHz <= 0) return
+
+        val binCount = fft.size / 2
+        val sampleRateHz = samplingRateMilliHz / 1000.0
+        val nyquist = sampleRateHz / 2.0
+        var bassEnergy = 0.0
+
+        for (bin in 1 until binCount) {
+            val frequency = bin * nyquist / (binCount - 1)
+            if (frequency > 180.0) break
+            val real = fft[2 * bin].toDouble()
+            val imaginary = fft[2 * bin + 1].toDouble()
+            bassEnergy += kotlin.math.sqrt(real * real + imaginary * imaginary)
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val flux = (bassEnergy - previousBassEnergy).coerceAtLeast(0.0)
+        previousBassEnergy = previousBassEnergy * 0.72 + bassEnergy * 0.28
+
+        val threshold = maxOf(5.0, smoothedBassEnergy * 0.16)
+        val isOnset = flux > threshold &&
+            bassEnergy > smoothedBassEnergy * 1.08 &&
+            now - lastBeatPulseMs >= 260L
+
+        smoothedBassEnergy = smoothedBassEnergy * 0.88 + bassEnergy * 0.12
+
+        if (isOnset) {
+            if (lastBeatPulseMs > 0L) {
+                val interval = now - lastBeatPulseMs
+                if (interval in 300L..1200L) {
+                    recentBeatIntervals.add(interval)
+                    if (recentBeatIntervals.size > 7) {
+                        recentBeatIntervals.removeAt(0)
+                    }
+                    val sorted = recentBeatIntervals.sorted()
+                    val median = sorted[sorted.size / 2]
+                    estimatedBeatIntervalMs =
+                        (estimatedBeatIntervalMs * 0.35 + median * 0.65)
+                            .toLong()
+                            .coerceIn(350L, 1000L)
+                }
+            }
+            lastBeatPulseMs = now
+        }
+    }
+
     private fun updateDetectedChord(chord: String) {
+        val now = SystemClock.elapsedRealtime()
+
         if (candidateChord == chord) {
             candidateChordFrames++
         } else {
             candidateChord = chord
             candidateChordFrames = 1
+            candidateChordSinceMs = now
         }
 
-        // 순간적인 잡음으로 코드가 계속 바뀌지 않도록 같은 코드가 연속 검출될 때만 반영합니다.
-        if (candidateChordFrames >= 2 && displayedChord != chord) {
+        // Require a short stable window to reject rapid FFT misclassifications.
+        if (candidateChordFrames >= 3 &&
+            now - candidateChordSinceMs >= 120L &&
+            displayedChord != chord
+        ) {
             displayedChord = chord
 
-            // 같은 코드가 연속 검출되면 한 번만 기록하고, 새 코드가 나오면 오른쪽에 추가합니다.
             if (chordHistory.lastOrNull() != chord) {
                 chordHistory.add(chord)
                 if (chordHistory.size > 5) {
@@ -2139,14 +2193,18 @@ class MainActivity : Activity() {
         if (chordSlots.size < 5) return
 
         val firstVisibleSlot = 5 - chordHistory.size
+        val duration = (estimatedBeatIntervalMs * 0.72)
+            .toLong()
+            .coerceIn(280L, 680L)
+
         chordSlots.forEachIndexed { index, slot ->
             val historyIndex = index - firstVisibleSlot
             val hasChord = historyIndex in chordHistory.indices
             slot.text = if (hasChord) chordHistory[historyIndex] else "—"
 
             val isLatestChord = hasChord && index == 4
-            // TextView.textSize getter returns px, while its setter expects sp.
-            // Do not reassign it here: doing so made the font grow after each update.
+            val targetAlpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
+
             slot.setTextColor(
                 when {
                     isLatestChord -> Color.rgb(85, 213, 255)
@@ -2154,13 +2212,23 @@ class MainActivity : Activity() {
                     else -> Color.rgb(75, 94, 113)
                 }
             )
-            slot.alpha = if (isLatestChord) 1.0f else if (hasChord) 0.82f else 0.45f
+
+            slot.animate().cancel()
             if (animate) {
-                slot.animate().cancel()
-                slot.translationX = dp(16).toFloat()
-                slot.animate().translationX(0f).setDuration(200L).start()
+                // Each slot glides in from the right with a small stagger,
+                // creating a continuous conveyor-like movement rather than a snap.
+                slot.translationX = dp(22).toFloat()
+                slot.alpha = 0.35f
+                slot.animate()
+                    .translationX(0f)
+                    .alpha(targetAlpha)
+                    .setStartDelay(index * 32L)
+                    .setDuration(duration)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
             } else {
                 slot.translationX = 0f
+                slot.alpha = targetAlpha
             }
         }
     }
@@ -2168,11 +2236,19 @@ class MainActivity : Activity() {
     private fun resetChordDisplay() {
         candidateChord = null
         candidateChordFrames = 0
+        candidateChordSinceMs = 0L
         displayedChord = null
         chordHistory.clear()
+        previousBassEnergy = 0.0
+        smoothedBassEnergy = 0.0
+        lastBeatPulseMs = 0L
+        recentBeatIntervals.clear()
+        estimatedBeatIntervalMs = 600L
         if (chordSlots.isNotEmpty()) {
             chordSlots.forEach {
+                it.animate().cancel()
                 it.text = "—"
+                it.translationX = 0f
                 it.alpha = 1.0f
                 it.setTextColor(Color.rgb(125, 151, 174))
             }
@@ -2197,7 +2273,21 @@ class MainActivity : Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 210) {
+        if (requestCode == 102) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
+                browserCurrentPath = ""
+                selectedBrowserFiles.clear()
+                showMp3Browser()
+            } else {
+                Toast.makeText(
+                    this,
+                    "MP3 파일을 보려면 오디오 파일 접근 권한이 필요합니다.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } else if (requestCode == 210) {
             if (grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
