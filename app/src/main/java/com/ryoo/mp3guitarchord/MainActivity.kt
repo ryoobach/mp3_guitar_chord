@@ -1583,8 +1583,10 @@ class MainActivity : Activity() {
         }
 
         rememberRadioAddress(uri.toString())
-        playlist.add(uri)
-        songNames.add("RADIO | ${uri.host ?: "인터넷 방송"}")
+        val insertionIndex = if (highlightedIndex in playlist.indices) highlightedIndex + 1 else playlist.size
+        playlist.add(insertionIndex, uri)
+        songNames.add(insertionIndex, "RADIO | ${uri.host ?: "인터넷 방송"}")
+        if (highlightedIndex >= insertionIndex && highlightedIndex >= 0) highlightedIndex++
 
         adapter.notifyDataSetChanged()
 
@@ -2434,8 +2436,11 @@ class MainActivity : Activity() {
         }
         playlist.removeAt(index)
         songNames.removeAt(index)
-        selectedPlaylistItems.remove(index)
-        selectedPlaylistItems.replaceAll { if (it > index) it - 1 else it }
+        val shiftedSelections = selectedPlaylistItems
+            .filter { it != index }
+            .map { if (it > index) it - 1 else it }
+        selectedPlaylistItems.clear()
+        selectedPlaylistItems.addAll(shiftedSelections)
         if (currentIndex > index) currentIndex--
         if (highlightedIndex > index) highlightedIndex--
         else if (highlightedIndex == index) highlightedIndex = (index - 1).coerceAtMost(playlist.lastIndex)
@@ -3027,7 +3032,6 @@ class MainActivity : Activity() {
             if (grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             ) {
-                browserCurrentPath = ""
                 selectedBrowserFiles.clear()
                 showMp3Browser()
             } else {
