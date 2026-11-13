@@ -348,7 +348,6 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(23, 40, 58))
             setPadding(dp(3), dp(4), dp(3), dp(4))
         }
-
         elapsedTimeText = TextView(this).apply {
             text = "00:00"
             textSize = timeFontSize
@@ -698,7 +697,6 @@ class MainActivity : Activity() {
                 Color.rgb(52, 75, 97)
             )
             dividerHeight = dp(1)
-
             setOnItemClickListener { _, _, position, _ ->
                 if (selectionMode) {
                     if (!selectedPlaylistItems.add(position)) {
@@ -1047,8 +1045,7 @@ class MainActivity : Activity() {
         }
         textColumn.addView(version)
 
-        val developer = TextView(this).apply {
-            text = "Ryoo Jaesang & 최피디"
+        val developer = TextView(this).apply {            text = "Ryoo Jaesang & 최피디"
             textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.rgb(245, 214, 107))
@@ -1347,7 +1344,8 @@ class MainActivity : Activity() {
                 text = "▼"
                 textSize = 15f
                 gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
+                setTextColor(Color.rgb(30, 55, 78))
+                background = roundedBackground(Color.rgb(225, 237, 246), Color.rgb(150, 175, 195))
                 contentDescription = "저장된 방송 주소 목록 열기"
                 isClickable = true
                 isFocusable = true
@@ -1397,7 +1395,6 @@ class MainActivity : Activity() {
             .setNegativeButton("취소", null)
             .show()
     }
-
     private fun loadRadioAddressHistory(): List<String> {
         val saved = getSharedPreferences("player_settings", MODE_PRIVATE)
             .getString("radio_address_history", null) ?: return emptyList()
@@ -1747,8 +1744,7 @@ class MainActivity : Activity() {
             )
         }
         result.addAll(files)
-        return result
-    }
+        return result    }
 
     private fun addSelectedBrowserFiles() {
         var addedCount = 0
@@ -2098,7 +2094,6 @@ class MainActivity : Activity() {
             Toast.LENGTH_SHORT
         ).show()
     }
-
     private fun removeSelected() {
 
         if (!selectionMode) {
@@ -2447,8 +2442,7 @@ class MainActivity : Activity() {
 
     private fun resetChordDisplay(invalidateAnalysis: Boolean = true) {
         if (invalidateAnalysis) chordAnalysisGeneration++
-        candidateChord = null
-        candidateChordFrames = 0
+        candidateChord = null        candidateChordFrames = 0
         candidateChordSinceMs = 0L
         recentChordCandidates.clear()
         displayedChord = null
@@ -2797,8 +2791,7 @@ private object StreamAddressResolver {
 
             try {
                 val status = connection.responseCode
-                if (status !in 200..299) {
-                    throw java.io.IOException("HTTP $status")
+                if (status !in 200..299) {                    throw java.io.IOException("HTTP $status")
                 }
 
                 val finalUrl = connection.url.toString()
