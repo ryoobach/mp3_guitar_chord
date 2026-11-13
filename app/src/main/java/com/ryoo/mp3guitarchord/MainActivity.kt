@@ -1559,19 +1559,17 @@ class MainActivity : Activity() {
 
         adapter.notifyDataSetChanged()
 
-        if (currentIndex == -1) {
-            currentIndex = 0
-            setScrollingSongTitle(songNames[0])
-            adapter.notifyDataSetChanged()
-        }
-
         savePlaylist()
 
         Toast.makeText(
             this,
-            "인터넷 방송을 추가했습니다.",
+            "방송 주소를 추가했습니다. 재생을 시작합니다.",
             Toast.LENGTH_SHORT
         ).show()
+
+        // 주소 확인 버튼을 누르면 재생목록에만 넣고 멈추지 않고,
+        // 방금 추가한 방송을 즉시 재생합니다.
+        playTrack(playlist.lastIndex)
     }
 
     // --------------------------------------------------
