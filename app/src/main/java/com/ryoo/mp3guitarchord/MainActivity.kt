@@ -92,6 +92,8 @@ class MainActivity : Activity() {
     // 4/4 기본 박자표를 기준으로 계산한 마디 길이. 코드 변화는 마디 경계에 강제로 맞추지 않습니다.
     @Volatile private var estimatedBarIntervalMs = 2400L
     private lateinit var analyzerView: AudioVisualizerView
+    // Each frequency band keeps its own decaying peak so quiet treble is not hidden by bass energy.
+    private val spectrumPeakHold = DoubleArray(48)
     private var audioVisualizer: Visualizer? = null
     private var icyMetadataReader: IcyMetadataReader? = null
     private lateinit var playButton: Button
@@ -2314,28 +2316,33 @@ class MainActivity : Activity() {
                         val diagnosticNow = SystemClock.elapsedRealtime()
                         if (diagnosticNow - lastChordDiagnosticLogMs >= 5000L) {
                             lastChordDiagnosticLogMs = diagnosticNow
+                            val fftBinWidthHz = (samplingRate / 1000.0) / fft.size
+                            val probeBins = intArrayOf(0, 12, 24, 36, 47)
+                                .joinToString(",") { index -> "${index}:${"%.1f".format(spectrumPeakHold[index])}" }
                             Log.i(
                                 "EasyChord",
-                                "audioSignal=$hasAudioSignal ${ChordDetector.lastDiagnostic}"
+                                "fftSize=${fft.size} sampleRateMilliHz=$samplingRate binWidthHz=${"%.2f".format(fftBinWidthHz)} " +
+                                    "audioSignal=$hasAudioSignal spectrumPeakHold=[$probeBins] ${ChordDetector.lastDiagnostic}"
                             )
                         }
                         runOnUiThread {
                             if (analysisGeneration != chordAnalysisGeneration) return@runOnUiThread
                             if (detectedChord != null) {
                                 updateDetectedChord(detectedChord)
-                            } else if (hasAudioSignal) {
-                                updateNoChordStatus()
+                            } else {
+                                // Absence of a detected chord does not mean a DJ is speaking.
+                                // Do not show a false "멘트 중입니다" message without speech recognition.
+                                if (::chordStatusText.isInitialized) chordStatusText.visibility = View.GONE
                             }
                         }
-                        // Winamp-style logarithmic bands with frequency compensation.
-                        // Peak magnitude is used instead of RMS so sparse treble transients
-                        // are not averaged away across wide high-frequency bands.
+                        // Relative logarithmic spectrum with an independent decaying peak per band.
+                        // This prevents strong bass bins from visually suppressing quieter treble bins.
                         val bars = FloatArray(48)
                         val binCount = fft.size / 2
                         val sampleRateHz = samplingRate / 1000.0
                         val binWidthHz = sampleRateHz / fft.size
                         val minFrequencyHz = 35.0
-                        val maxFrequencyHz = (sampleRateHz * 0.46).coerceAtLeast(minFrequencyHz * 2.0)
+                        val maxFrequencyHz = sampleRateHz * 0.46
                         val logRange = kotlin.math.ln(maxFrequencyHz / minFrequencyHz)
 
                         for (bar in bars.indices) {
@@ -2351,15 +2358,18 @@ class MainActivity : Activity() {
                             for (bin in startBin until endBin) {
                                 val real = fft[2 * bin].toDouble()
                                 val imaginary = fft[2 * bin + 1].toDouble()
-                                peak = maxOf(peak, kotlin.math.sqrt(real * real + imaginary * imaginary))
+                                peak = maxOf(peak, kotlin.math.hypot(real, imaginary))
                             }
 
-                            // Compensate for the naturally weaker upper spectrum.
-                            val frequencyGain = kotlin.math.exp(lowerRatio * 2.0)
-                            val amplifiedPeak = peak * frequencyGain
-                            val normalized = kotlin.math.ln(1.0 + amplifiedPeak) /
-                                kotlin.math.ln(1.0 + 42.0 * frequencyGain)
-                            bars[bar] = normalized.pow(0.72).toFloat().coerceIn(0.025f, 1f)
+                            val heldPeak = maxOf(peak, spectrumPeakHold[bar] * 0.965)
+                            spectrumPeakHold[bar] = heldPeak
+                            val level = if (peak < 2.0) {
+                                0.025
+                            } else {
+                                kotlin.math.sqrt(peak / maxOf(heldPeak * 0.90, 3.0))
+                                    .coerceIn(0.025, 1.0)
+                            }
+                            bars[bar] = level.toFloat()
                         }
                         updateBeatTempo(fft, samplingRate)
                         val playbackPosition = try { player?.currentPosition ?: 0 } catch (_: Exception) { 0 }
@@ -2592,6 +2602,7 @@ class MainActivity : Activity() {
         smoothedBassEnergy = 0.0
         lastBeatPulseMs = 0L
         recentBeatIntervals.clear()
+        spectrumPeakHold.fill(0.0)
         estimatedBeatIntervalMs = 600L
         estimatedBarIntervalMs = 2400L
         if (chordSlots.isNotEmpty()) {
