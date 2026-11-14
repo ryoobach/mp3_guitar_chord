@@ -342,8 +342,10 @@ class MainActivity : Activity() {
             textSize = 12f
             contentDescription = "앱 종료"
             setOnClickListener {
+                // Stop playback and release audio resources before removing the task.
                 releaseCurrentPlayer()
-                finishAffinity()
+                savePlaylist()
+                finishAndRemoveTask()
             }
         }
 
