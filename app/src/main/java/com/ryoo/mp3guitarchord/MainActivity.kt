@@ -157,9 +157,18 @@ class MainActivity : Activity() {
     private fun finishPlaylistDrag() {
         handler.removeCallbacks(playlistAutoScrollRunnable)
         playlistAutoScrollDirection = 0
-        if (playlistDragUri != null) savePlaylist()
+        val didMovePlaylistItem = playlistDragUri != null
+        if (didMovePlaylistItem) savePlaylist()
         playlistDragUri = null
         playlistDragUris.clear()
+
+        // 드래그 이동이 끝나면 선택 상태와 SEL 모드를 자동으로 종료합니다.
+        if (didMovePlaylistItem) {
+            selectedPlaylistItems.clear()
+            selectionMode = false
+            if (::selectButton.isInitialized) updateSelectionButtonAppearance()
+        }
+
         if (::adapter.isInitialized) adapter.notifyDataSetChanged()
     }
 
