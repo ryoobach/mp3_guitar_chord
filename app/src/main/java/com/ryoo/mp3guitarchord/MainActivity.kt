@@ -67,28 +67,26 @@ class MainActivity : Activity() {
         }
     }
     private var playlistAutoScrollDirection = 0
-    private var playlistDragMoveDirection = 0
     private var playlistDragMoveAtMs = 0L
+    private var playlistDragPointerX = 0
+    private var playlistDragPointerY = 0
 
-    // 드래그 중 목록 가장자리에 머무르면 스크롤과 항목 이동을 반복합니다.
+    // 가장자리 자동 스크롤은 손가락 위치를 기준으로 천천히 진행합니다.
     private val playlistAutoScrollRunnable = object : Runnable {
         override fun run() {
             val direction = playlistAutoScrollDirection
             if (playlistDragUri == null || direction == 0 || !::playlistView.isInitialized) return
 
-            // 위아래 자동 스크롤 속도를 동일하게 유지합니다.
-            val scrollStep = dp(10)
-            playlistView.scrollListBy(direction * scrollStep)
-            val target = if (direction < 0) {
-                playlistView.firstVisiblePosition
-            } else {
-                playlistView.lastVisiblePosition
-            }
+            // 짧은 시간에 목록이 튀어 오르지 않도록 이동량과 반복 간격을 낮춥니다.
+            playlistView.scrollListBy(direction * dp(4))
+            val target = playlistView.pointToPosition(
+                playlistDragPointerX.coerceIn(0, (playlistView.width - 1).coerceAtLeast(0)),
+                playlistDragPointerY.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
+            )
             if (target in playlist.indices) {
-                // 자동 스크롤 중에는 화면 위치를 이전 위치로 되돌리지 않습니다.
                 movePlaylistDragGroup(target, preserveViewport = false)
             }
-            handler.postDelayed(this, 35L)
+            handler.postDelayed(this, 120L)
         }
     }
 
@@ -175,8 +173,9 @@ class MainActivity : Activity() {
     private fun finishPlaylistDrag() {
         handler.removeCallbacks(playlistAutoScrollRunnable)
         playlistAutoScrollDirection = 0
-        playlistDragMoveDirection = 0
         playlistDragMoveAtMs = 0L
+        playlistDragPointerX = 0
+        playlistDragPointerY = 0
         val didMovePlaylistItem = playlistDragUri != null
         if (didMovePlaylistItem) savePlaylist()
         playlistDragUri = null
@@ -933,6 +932,8 @@ class MainActivity : Activity() {
             } else {
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_MOVE -> {
+                        playlistDragPointerX = event.x.toInt()
+                        playlistDragPointerY = event.y.toInt()
                         val edgeSize = dp(48)
                         val direction = when {
                             event.y < edgeSize -> -1
