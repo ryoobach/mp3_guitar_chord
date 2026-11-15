@@ -697,8 +697,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(16, 31, 50))
         }
         progressRow.addView(
-            progressBar,
-            LinearLayout.LayoutParams(0, dp(if (isCompact) 31 else 36), 1f)
+            progressBar,            LinearLayout.LayoutParams(0, dp(if (isCompact) 31 else 36), 1f)
         )
         progressPercentText = TextView(this).apply {
             text = "0%"
@@ -809,19 +808,27 @@ class MainActivity : Activity() {
             )
             dividerHeight = dp(1)
             setOnItemClickListener { _, _, position, _ ->
-                highlightedIndex = position
                 if (selectionMode) {
                     val clickedUri = playlist.getOrNull(position)
                     if (clickedUri != null && !selectedPlaylistItems.add(clickedUri)) {
                         selectedPlaylistItems.remove(clickedUri)
                     }
                     this@MainActivity.adapter.notifyDataSetChanged()
+                    Toast.makeText(
+                        this@MainActivity,
+                        "${selectedPlaylistItems.size}곡 선택됨",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
+                    // 기본 모드에서는 곡을 재생 대상으로 지정하고 즉시 하이라이트합니다.
                     playTrack(position)
                 }
             }
             setOnItemLongClickListener { _, _, position, _ ->
-                if (position in songNames.indices) {
+                if (selectionMode) {
+                    // 선택 모드에서는 길게 눌러도 재정렬을 시작하지 않습니다.
+                    false
+                } else if (position in songNames.indices) {
                     // 길게 누른 곡을 즉시 선택 표시한 뒤, 같은 곡을 기준으로 드래그합니다.
                     highlightedIndex = position
                     playlistDragUri = playlist.getOrNull(position)
@@ -891,7 +898,12 @@ class MainActivity : Activity() {
                 val label = (super.getView(position, convertView, parent) as TextView)
                 val isSelected = playlist.getOrNull(position) in selectedPlaylistItems
                 val isDragging = playlistDragUri != null && playlist.getOrNull(position) == playlistDragUri
-                val isCurrentTrack = position == highlightedIndex || (highlightedIndex < 0 && position == currentIndex && player != null)
+                // 재생/일시정지 상태와 관계없이 현재 지정된 곡을 계속 표시합니다.
+                val isCurrentTrack = if (currentIndex in playlist.indices) {
+                    position == currentIndex
+                } else {
+                    position == highlightedIndex
+                }
 
                 label.text = songNames[position]
                 label.textSize = 14f
@@ -902,20 +914,21 @@ class MainActivity : Activity() {
                 }
                 label.setPadding(dp(12), dp(9), dp(8), dp(9))
 
-                // 현재 재생 곡은 청록색, SEL 모드에서 고른 곡은 금색으로 구분합니다.
+                // 현재 재생 대상으로 지정된 곡은 선명한 청록색,
+                // SEL 모드에서 삭제 대상으로 고른 곡은 금색으로 확실히 구분합니다.
                 label.setTextColor(
                     when {
                         isDragging -> Color.WHITE
-                        isSelected -> Color.rgb(255, 220, 115)
-                        isCurrentTrack -> Color.rgb(85, 213, 255)
-                        else -> Color.rgb(245, 245, 245)
+                        isSelected -> Color.rgb(255, 230, 145)
+                        isCurrentTrack -> Color.WHITE
+                        else -> Color.rgb(220, 230, 240)
                     }
                 )
                 label.setBackgroundColor(
                     when {
                         isDragging -> Color.rgb(0, 112, 150)
-                        isSelected -> Color.rgb(83, 66, 31)
-                        isCurrentTrack -> Color.rgb(22, 61, 83)
+                        isSelected -> Color.rgb(112, 78, 16)
+                        isCurrentTrack -> Color.rgb(0, 86, 120)
                         else -> Color.rgb(16, 31, 50)
                     }
                 )
@@ -1397,8 +1410,7 @@ class MainActivity : Activity() {
         songTitle.marqueeRepeatLimit = -1
         songTitle.isFocusable = true
         songTitle.isFocusableInTouchMode = true
-        songTitle.isSelected = false
-        songTitle.requestLayout()
+        songTitle.isSelected = false        songTitle.requestLayout()
         songTitle.post {
             if (::songTitle.isInitialized) {
                 songTitle.isSelected = true
@@ -2097,8 +2109,7 @@ class MainActivity : Activity() {
                     if (!name.endsWith(".mp3", ignoreCase = true)) continue
 
                     val storedPath = cursor.getString(pathColumn).orEmpty()
-                    val relativePath = if (isModernAndroid) {
-                        storedPath.trimStart('/')
+                    val relativePath = if (isModernAndroid) {                        storedPath.trimStart('/')
                     } else {
                         val storageRoot = android.os.Environment
                             .getExternalStorageDirectory().absolutePath.trimEnd('/') + "/"
@@ -2218,6 +2229,7 @@ class MainActivity : Activity() {
         highlightedIndex = index
         savePlaylist()
         setScrollingSongTitle(songNames[index])
+        adapter.notifyDataSetChanged()
         playButton.text = "…"
         resetTimeDisplay()
         progressBar.reset()
@@ -2797,8 +2809,7 @@ class MainActivity : Activity() {
                                 peak = maxOf(peak, kotlin.math.hypot(real, imaginary))
                             }
 
-                            val heldPeak = maxOf(peak, spectrumPeakHold[bar] * 0.965)
-                            spectrumPeakHold[bar] = heldPeak
+                            val heldPeak = maxOf(peak, spectrumPeakHold[bar] * 0.965)                            spectrumPeakHold[bar] = heldPeak
                             val level = if (peak < 2.0) {
                                 0.025
                             } else {
