@@ -2611,7 +2611,7 @@ class MainActivity : Activity() {
 
         Toast.makeText(
             this,
-            if (selectionMode) "삭제할 곡을 선택해 주세요." else "선택 모드를 종료했습니다.",
+            if (selectionMode) "곡을 선택해 주세요" else "선택 모드를 종료했습니다.",
             Toast.LENGTH_SHORT
         ).show()
     }
