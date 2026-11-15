@@ -74,7 +74,9 @@ class MainActivity : Activity() {
             val direction = playlistAutoScrollDirection
             if (playlistDragUri == null || direction == 0 || !::playlistView.isInitialized) return
 
-            playlistView.scrollListBy(direction * dp(10))
+            // 아래 방향은 항목을 화면 아래쪽으로 재배치하는 동작과 겹쳐 더 빠르게 느껴질 수 있어 속도를 낮춥니다.
+            val scrollStep = if (direction > 0) dp(4) else dp(10)
+            playlistView.scrollListBy(direction * scrollStep)
             val target = if (direction < 0) {
                 playlistView.firstVisiblePosition
             } else {
