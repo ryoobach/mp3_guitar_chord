@@ -68,29 +68,28 @@ class MainActivity : Activity() {
     }
     private var playlistAutoScrollDirection = 0
 
-    // 드래그 포인터가 목록 가장자리에 머무르면 목록을 계속 스크롤합니다.
+    // 드래그 중 목록 가장자리에 머무르면 스크롤과 항목 이동을 반복합니다.
     private val playlistAutoScrollRunnable = object : Runnable {
         override fun run() {
             val direction = playlistAutoScrollDirection
             if (playlistDragUri == null || direction == 0 || !::playlistView.isInitialized) return
 
-            playlistView.scrollListBy(direction * dp(14))
-            val edgeY = if (direction < 0) dp(8) else playlistView.height - dp(8)
-            val target = playlistView.pointToPosition(
-                (playlistView.width / 2).coerceAtLeast(0),
-                edgeY.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
-            )
-            val draggedUri = playlistDragUri
-            val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
-            if (from in playlist.indices && target in playlist.indices && target != from) {
-                movePlaylistDragGroup(target)
+            playlistView.scrollListBy(direction * dp(10))
+            val target = if (direction < 0) {
+                playlistView.firstVisiblePosition
+            } else {
+                playlistView.lastVisiblePosition
             }
-            handler.postDelayed(this, 40L)
+            if (target in playlist.indices) {
+                // 자동 스크롤 중에는 화면 위치를 이전 위치로 되돌리지 않습니다.
+                movePlaylistDragGroup(target, preserveViewport = false)
+            }
+            handler.postDelayed(this, 35L)
         }
     }
 
     /** 선택된 한 곡 또는 여러 곡을 하나의 묶음으로 이동합니다. */
-    private fun movePlaylistDragGroup(target: Int) {
+    private fun movePlaylistDragGroup(target: Int, preserveViewport: Boolean = true) {
         val movingUris = playlistDragUris.toSet()
         if (movingUris.isEmpty() || target !in playlist.indices) return
         val targetUri = playlist[target]
@@ -127,10 +126,12 @@ class MainActivity : Activity() {
         currentIndex = currentUri?.let { playlist.indexOf(it) } ?: -1
         highlightedIndex = highlightedUri?.let { playlist.indexOf(it) } ?: -1
         adapter.notifyDataSetChanged()
-        val restoredPosition = firstVisibleUri?.let { playlist.indexOf(it) }
-            ?.takeIf { it >= 0 }
-            ?: firstVisiblePosition.coerceIn(0, (playlist.size - 1).coerceAtLeast(0))
-        if (playlist.isNotEmpty()) playlistView.setSelectionFromTop(restoredPosition, firstVisibleTop)
+        if (preserveViewport) {
+            val restoredPosition = firstVisibleUri?.let { playlist.indexOf(it) }
+                ?.takeIf { it >= 0 }
+                ?: firstVisiblePosition.coerceIn(0, (playlist.size - 1).coerceAtLeast(0))
+            if (playlist.isNotEmpty()) playlistView.setSelectionFromTop(restoredPosition, firstVisibleTop)
+        }
     }
 
     private fun beginPlaylistDrag(position: Int) {
