@@ -2561,9 +2561,10 @@ class MainActivity : Activity() {
             resetChordDisplay()
             setScrollingSongTitle("")
         }
+        val removedUri = playlist.getOrNull(index)
         playlist.removeAt(index)
         songNames.removeAt(index)
-        selectedPlaylistItems.remove(playlist.getOrNull(index))
+        if (removedUri != null) selectedPlaylistItems.remove(removedUri)
         if (currentIndex > index) currentIndex--
         if (highlightedIndex > index) highlightedIndex--
         else if (highlightedIndex == index) highlightedIndex = (index - 1).coerceAtMost(playlist.lastIndex)
