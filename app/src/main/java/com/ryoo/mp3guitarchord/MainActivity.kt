@@ -76,8 +76,8 @@ class MainActivity : Activity() {
             val direction = playlistAutoScrollDirection
             if (playlistDragUri == null || direction == 0 || !::playlistView.isInitialized) return
 
-            // 아래 방향은 아주 천천히 스크롤해 방향 전환 직후 급격히 내려가는 느낌을 줄입니다.
-            val scrollStep = if (direction > 0) dp(1).coerceAtLeast(1) else dp(10)
+            // 위아래 자동 스크롤 속도를 동일하게 유지합니다.
+            val scrollStep = dp(10)
             playlistView.scrollListBy(direction * scrollStep)
             val target = if (direction < 0) {
                 playlistView.firstVisiblePosition
@@ -88,7 +88,7 @@ class MainActivity : Activity() {
                 // 자동 스크롤 중에는 화면 위치를 이전 위치로 되돌리지 않습니다.
                 movePlaylistDragGroup(target, preserveViewport = false)
             }
-            handler.postDelayed(this, if (direction > 0) 80L else 35L)
+            handler.postDelayed(this, 35L)
         }
     }
 
@@ -99,31 +99,15 @@ class MainActivity : Activity() {
         val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
         if (anchorIndex < 0) return
         val movingDown = anchorIndex < target
-        // 한 곡을 아래로 끌 때는 한 번에 한 칸만 이동시켜 손가락 아래에서
-        // 여러 항목을 연속으로 통과하며 급격히 내려가는 현상을 방지합니다.
-        val safeTarget = if (movingDown && movingUris.size == 1) {
-            minOf(target, anchorIndex + 1)
+        // 한 곡을 이동할 때 위아래 모두 한 번에 한 칸씩 같은 속도로 이동합니다.
+        val safeTarget = if (movingUris.size == 1) {
+            if (movingDown) minOf(target, anchorIndex + 1)
+            else maxOf(target, anchorIndex - 1)
         } else {
             target
         }
         val targetUri = playlist.getOrNull(safeTarget) ?: return
         if (targetUri in movingUris) return
-
-        // 아래 방향은 방향을 바꾼 직후 바로 이동하지 않고 잠시 멈춘 뒤,
-        // 이후에도 500ms에 한 칸씩만 이동해 과도하게 빨라지지 않도록 합니다.
-        val now = SystemClock.elapsedRealtime()
-        if (movingDown) {
-            if (playlistDragMoveDirection != 1) {
-                playlistDragMoveDirection = 1
-                playlistDragMoveAtMs = now
-                return
-            }
-            if (now - playlistDragMoveAtMs < 500L) return
-            playlistDragMoveAtMs = now
-        } else {
-            playlistDragMoveDirection = -1
-            playlistDragMoveAtMs = now
-        }
 
         val currentUri = playlist.getOrNull(currentIndex)
         val highlightedUri = playlist.getOrNull(highlightedIndex)
