@@ -56,7 +56,7 @@ class MainActivity : Activity() {
     private var browserCurrentPath = ""
     private var folderSelectionMode = false
     private var highlightedIndex = -1
-    private var playlistDragFrom = -1
+    private var playlistDragUri: Uri? = null
 
     /** Reorders one playlist row while keeping playback and selection attached to the same songs. */
     private fun movePlaylistItem(from: Int, to: Int) {
@@ -84,8 +84,6 @@ class MainActivity : Activity() {
         selectedPlaylistItems.addAll(remappedSelection)
 
         adapter.notifyDataSetChanged()
-        playlistView.setSelection(to)
-        savePlaylist()
     }
 
     private fun browserPathKey(): String =
@@ -792,7 +790,7 @@ class MainActivity : Activity() {
             }
             setOnItemLongClickListener { _, _, position, _ ->
                 if (position in songNames.indices) {
-                    playlistDragFrom = position
+                    playlistDragUri = playlist.getOrNull(position)
                     Toast.makeText(
                         this@MainActivity,
                         "곡을 위아래로 끌어 순서를 바꾸세요.",
@@ -804,17 +802,25 @@ class MainActivity : Activity() {
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        val from = playlistDragFrom
+                        val draggedUri = playlistDragUri
+                        val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
                         if (from in songNames.indices) {
                             val target = pointToPosition(event.x.toInt(), event.y.toInt())
                             if (target in songNames.indices && target != from) {
                                 movePlaylistItem(from, target)
-                                playlistDragFrom = target
                             }
                         }
                     }
                     android.view.MotionEvent.ACTION_UP,
-                    android.view.MotionEvent.ACTION_CANCEL -> playlistDragFrom = -1
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        val draggedUri = playlistDragUri
+                        if (draggedUri != null) {
+                            val finalIndex = playlist.indexOf(draggedUri)
+                            if (finalIndex >= 0) playlistView.setSelection(finalIndex)
+                            savePlaylist()
+                        }
+                        playlistDragUri = null
+                    }
                 }
                 false
             }
