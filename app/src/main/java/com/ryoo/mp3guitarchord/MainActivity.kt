@@ -137,7 +137,8 @@ class MainActivity : Activity() {
         if (position !in playlist.indices) return
         val pressedUri = playlist[position]
         playlistDragUris.clear()
-        if (selectionMode && pressedUri in selectedPlaylistItems) {
+        if (selectionMode) {
+            selectedPlaylistItems.add(pressedUri)
             playlistDragUris.addAll(playlist.filter { it in selectedPlaylistItems })
         } else {
             playlistDragUris.add(pressedUri)
@@ -869,8 +870,29 @@ class MainActivity : Activity() {
         }
         playlistView.setOnItemLongClickListener { _, _, position, _ ->
             if (position !in playlist.indices) return@setOnItemLongClickListener false
-            beginPlaylistDrag(position)
-            playlistView.parent?.requestDisallowInterceptTouchEvent(true)
+
+            val pressedUri = playlist[position]
+            if (!selectionMode) {
+                // 첫 길게 누르기는 다중 선택 모드를 켜고 해당 곡을 선택합니다.
+                selectionMode = true
+                selectedPlaylistItems.clear()
+                selectedPlaylistItems.add(pressedUri)
+                updateSelectionButtonAppearance()
+                adapter.notifyDataSetChanged()
+                Toast.makeText(
+                    this,
+                    "선택 모드: 다른 곡을 눌러 추가 선택하세요. 선택된 곡을 길게 눌러 이동할 수 있습니다.",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                // 선택 모드에서 선택된 곡을 길게 누르면 선택된 곡들을 묶어서 드래그합니다.
+                if (pressedUri !in selectedPlaylistItems) {
+                    selectedPlaylistItems.add(pressedUri)
+                    adapter.notifyDataSetChanged()
+                }
+                beginPlaylistDrag(position)
+                playlistView.parent?.requestDisallowInterceptTouchEvent(true)
+            }
             true
         }
         playlistView.setOnTouchListener { view, event ->
@@ -2634,14 +2656,7 @@ class MainActivity : Activity() {
         selectionMode = !selectionMode
         selectedPlaylistItems.clear()
 
-        selectButton.setTextColor(
-            if (selectionMode) Color.rgb(255, 220, 115) else Color.WHITE
-        )
-        selectButton.background = roundedBackground(
-            if (selectionMode) Color.rgb(83, 66, 31) else Color.rgb(35, 65, 88),
-            if (selectionMode) Color.rgb(255, 220, 115) else Color.rgb(64, 103, 130)
-        )
-
+        updateSelectionButtonAppearance()
         adapter.notifyDataSetChanged()
 
         Toast.makeText(
