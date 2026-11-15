@@ -62,6 +62,11 @@ class MainActivity : Activity() {
     private fun movePlaylistItem(from: Int, to: Int) {
         if (from !in playlist.indices || to !in playlist.indices || from == to) return
 
+        // 재정렬 전 화면 맨 위에 보이던 곡과 픽셀 위치를 기억해 목록의 시야를 유지합니다.
+        val firstVisiblePosition = playlistView.firstVisiblePosition
+        val firstVisibleUri = playlist.getOrNull(firstVisiblePosition)
+        val firstVisibleTop = playlistView.getChildAt(0)?.top ?: 0
+
         val movedUri = playlist.removeAt(from)
         playlist.add(to, movedUri)
         val movedName = songNames.removeAt(from)
@@ -84,6 +89,13 @@ class MainActivity : Activity() {
         selectedPlaylistItems.addAll(remappedSelection)
 
         adapter.notifyDataSetChanged()
+
+        val restoredPosition = firstVisibleUri?.let { playlist.indexOf(it) }
+            ?.takeIf { it >= 0 }
+            ?: firstVisiblePosition.coerceIn(0, (playlist.size - 1).coerceAtLeast(0))
+        if (playlist.isNotEmpty()) {
+            playlistView.setSelectionFromTop(restoredPosition, firstVisibleTop)
+        }
     }
 
     private fun browserPathKey(): String =
@@ -819,8 +831,8 @@ class MainActivity : Activity() {
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         val draggedUri = playlistDragUri
                         if (draggedUri != null) {
-                            val finalIndex = playlist.indexOf(draggedUri)
-                            if (finalIndex >= 0) playlistView.setSelection(finalIndex)
+                            // setSelection()은 이동한 곡을 화면 맨 위로 밀어 올리므로 사용하지 않습니다.
+                            // 재정렬 중 유지한 목록 위치와 주변 곡 표시를 그대로 둡니다.
                             savePlaylist()
                         }
                         playlistDragUri = null
