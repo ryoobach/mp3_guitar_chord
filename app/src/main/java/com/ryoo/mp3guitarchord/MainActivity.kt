@@ -56,6 +56,37 @@ class MainActivity : Activity() {
     private var browserCurrentPath = ""
     private var folderSelectionMode = false
     private var highlightedIndex = -1
+    private var playlistDragFrom = -1
+
+    /** Reorders one playlist row while keeping playback and selection attached to the same songs. */
+    private fun movePlaylistItem(from: Int, to: Int) {
+        if (from !in playlist.indices || to !in playlist.indices || from == to) return
+
+        val movedUri = playlist.removeAt(from)
+        playlist.add(to, movedUri)
+        val movedName = songNames.removeAt(from)
+        songNames.add(to, movedName)
+
+        fun remap(index: Int): Int {
+            if (index < 0) return index
+            return when {
+                index == from -> to
+                from < to && index in (from + 1)..to -> index - 1
+                from > to && index in to until from -> index + 1
+                else -> index
+            }
+        }
+
+        currentIndex = remap(currentIndex)
+        highlightedIndex = remap(highlightedIndex)
+        val remappedSelection = selectedPlaylistItems.map { remap(it) }.toSet()
+        selectedPlaylistItems.clear()
+        selectedPlaylistItems.addAll(remappedSelection)
+
+        adapter.notifyDataSetChanged()
+        playlistView.setSelection(to)
+        savePlaylist()
+    }
 
     private fun browserPathKey(): String =
         if (folderSelectionMode) "last_folder_browser_path" else "last_file_browser_path"
@@ -758,6 +789,34 @@ class MainActivity : Activity() {
                 } else {
                     playTrack(position)
                 }
+            }
+            setOnItemLongClickListener { _, _, position, _ ->
+                if (position in songNames.indices) {
+                    playlistDragFrom = position
+                    Toast.makeText(
+                        this@MainActivity,
+                        "곡을 위아래로 끌어 순서를 바꾸세요.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    true
+                } else false
+            }
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val from = playlistDragFrom
+                        if (from in songNames.indices) {
+                            val target = pointToPosition(event.x.toInt(), event.y.toInt())
+                            if (target in songNames.indices && target != from) {
+                                movePlaylistItem(from, target)
+                                playlistDragFrom = target
+                            }
+                        }
+                    }
+                    android.view.MotionEvent.ACTION_UP,
+                    android.view.MotionEvent.ACTION_CANCEL -> playlistDragFrom = -1
+                }
+                false
             }
         }
 
