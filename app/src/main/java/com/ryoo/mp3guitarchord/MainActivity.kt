@@ -57,6 +57,15 @@ class MainActivity : Activity() {
     private var folderSelectionMode = false
     private var highlightedIndex = -1
     private var playlistDragUri: Uri? = null
+    private val playlistDragUris = mutableListOf<Uri>()
+    private var playlistTouchPosition = -1
+    private var playlistTouchDownX = 0f
+    private var playlistTouchDownY = 0f
+    private val playlistLongPressRunnable = Runnable {
+        if (playlistTouchPosition in playlist.indices && playlistDragUri == null) {
+            beginPlaylistDrag(playlistTouchPosition)
+        }
+    }
     private var playlistAutoScrollDirection = 0
 
     // 드래그 포인터가 목록 가장자리에 머무르면 목록을 계속 스크롤합니다.
@@ -74,47 +83,83 @@ class MainActivity : Activity() {
             val draggedUri = playlistDragUri
             val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
             if (from in playlist.indices && target in playlist.indices && target != from) {
-                movePlaylistItem(from, target)
+                movePlaylistDragGroup(target)
             }
             handler.postDelayed(this, 40L)
         }
     }
 
-    /** Reorders one playlist row while keeping playback and selection attached to the same songs. */
-    private fun movePlaylistItem(from: Int, to: Int) {
-        if (from !in playlist.indices || to !in playlist.indices || from == to) return
+    /** 선택된 한 곡 또는 여러 곡을 하나의 묶음으로 이동합니다. */
+    private fun movePlaylistDragGroup(target: Int) {
+        val movingUris = playlistDragUris.toSet()
+        if (movingUris.isEmpty() || target !in playlist.indices) return
+        val targetUri = playlist[target]
+        if (targetUri in movingUris) return
+        val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
+        if (anchorIndex < 0) return
+        val movingDown = anchorIndex < target
 
-        // 재정렬 전 화면 맨 위에 보이던 곡과 픽셀 위치를 기억해 목록의 시야를 유지합니다.
+        val currentUri = playlist.getOrNull(currentIndex)
+        val highlightedUri = playlist.getOrNull(highlightedIndex)
         val firstVisiblePosition = playlistView.firstVisiblePosition
         val firstVisibleUri = playlist.getOrNull(firstVisiblePosition)
         val firstVisibleTop = playlistView.getChildAt(0)?.top ?: 0
 
-        val movedUri = playlist.removeAt(from)
-        playlist.add(to, movedUri)
-        val movedName = songNames.removeAt(from)
-        songNames.add(to, movedName)
-
-        fun remap(index: Int): Int {
-            if (index < 0) return index
-            return when {
-                index == from -> to
-                from < to && index in (from + 1)..to -> index - 1
-                from > to && index in to until from -> index + 1
-                else -> index
+        val movingEntries = playlist.indices
+            .filter { playlist[it] in movingUris }
+            .map { playlist[it] to songNames[it] }
+        for (index in playlist.indices.reversed()) {
+            if (playlist[index] in movingUris) {
+                playlist.removeAt(index)
+                songNames.removeAt(index)
             }
         }
 
-        currentIndex = remap(currentIndex)
-        highlightedIndex = remap(highlightedIndex)
+        val targetIndexAfterRemoval = playlist.indexOf(targetUri)
+        if (targetIndexAfterRemoval < 0) return
+        val insertAt = (if (movingDown) targetIndexAfterRemoval + 1 else targetIndexAfterRemoval)
+            .coerceIn(0, playlist.size)
+        movingEntries.forEachIndexed { offset, entry ->
+            playlist.add(insertAt + offset, entry.first)
+            songNames.add(insertAt + offset, entry.second)
+        }
 
+        currentIndex = currentUri?.let { playlist.indexOf(it) } ?: -1
+        highlightedIndex = highlightedUri?.let { playlist.indexOf(it) } ?: -1
         adapter.notifyDataSetChanged()
-
         val restoredPosition = firstVisibleUri?.let { playlist.indexOf(it) }
             ?.takeIf { it >= 0 }
             ?: firstVisiblePosition.coerceIn(0, (playlist.size - 1).coerceAtLeast(0))
-        if (playlist.isNotEmpty()) {
-            playlistView.setSelectionFromTop(restoredPosition, firstVisibleTop)
+        if (playlist.isNotEmpty()) playlistView.setSelectionFromTop(restoredPosition, firstVisibleTop)
+    }
+
+    private fun beginPlaylistDrag(position: Int) {
+        if (position !in playlist.indices) return
+        val pressedUri = playlist[position]
+        playlistDragUris.clear()
+        if (selectionMode && pressedUri in selectedPlaylistItems) {
+            playlistDragUris.addAll(playlist.filter { it in selectedPlaylistItems })
+        } else {
+            playlistDragUris.add(pressedUri)
         }
+        playlistDragUri = pressedUri
+        if (!selectionMode) highlightedIndex = position
+        adapter.notifyDataSetChanged()
+        Toast.makeText(
+            this,
+            if (playlistDragUris.size > 1) "${playlistDragUris.size}곡을 함께 이동합니다."
+            else "선택된 곡을 원하는 위치로 끌어 이동하세요.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun finishPlaylistDrag() {
+        handler.removeCallbacks(playlistAutoScrollRunnable)
+        playlistAutoScrollDirection = 0
+        if (playlistDragUri != null) savePlaylist()
+        playlistDragUri = null
+        playlistDragUris.clear()
+        if (::adapter.isInitialized) adapter.notifyDataSetChanged()
     }
 
     private fun browserPathKey(): String =
@@ -807,83 +852,7 @@ class MainActivity : Activity() {
                 Color.rgb(52, 75, 97)
             )
             dividerHeight = dp(1)
-            setOnItemClickListener { _, _, position, _ ->
-                if (selectionMode) {
-                    val clickedUri = playlist.getOrNull(position)
-                    if (clickedUri != null && !selectedPlaylistItems.add(clickedUri)) {
-                        selectedPlaylistItems.remove(clickedUri)
-                    }
-                    this@MainActivity.adapter.notifyDataSetChanged()
-                    Toast.makeText(
-                        this@MainActivity,
-                        "${selectedPlaylistItems.size}곡 선택됨",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    // 기본 모드에서는 곡을 재생 대상으로 지정하고 즉시 하이라이트합니다.
-                    playTrack(position)
-                }
-            }
-            setOnItemLongClickListener { _, _, position, _ ->
-                if (selectionMode) {
-                    // 선택 모드에서는 길게 눌러도 재정렬을 시작하지 않습니다.
-                    false
-                } else if (position in songNames.indices) {
-                    // 길게 누른 곡을 즉시 선택 표시한 뒤, 같은 곡을 기준으로 드래그합니다.
-                    highlightedIndex = position
-                    playlistDragUri = playlist.getOrNull(position)
-                    this@MainActivity.adapter.notifyDataSetChanged()
-                    invalidateViews()
-                    Toast.makeText(
-                        this@MainActivity,
-                        "선택된 곡을 원하는 위치로 끌어 이동하세요.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    true
-                } else false
-            }
-            setOnTouchListener { _, event ->
-                var handledDrag = playlistDragUri != null
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        val draggedUri = playlistDragUri
-                        val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
-                        if (from in songNames.indices) {
-                            val edgeSize = dp(48)
-                            val direction = when {
-                                event.y < edgeSize -> -1
-                                event.y > height - edgeSize -> 1
-                                else -> 0
-                            }
-                            if (direction != playlistAutoScrollDirection) {
-                                playlistAutoScrollDirection = direction
-                                handler.removeCallbacks(playlistAutoScrollRunnable)
-                                if (direction != 0) handler.post(playlistAutoScrollRunnable)
-                            }
 
-                            val targetY = event.y.toInt().coerceIn(0, (height - 1).coerceAtLeast(0))
-                            val target = pointToPosition(event.x.toInt(), targetY)
-                            if (target in songNames.indices && target != from) {
-                                movePlaylistItem(from, target)
-                            }
-                        }
-                    }
-                    android.view.MotionEvent.ACTION_UP,
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        val draggedUri = playlistDragUri
-                        handledDrag = draggedUri != null
-                        handler.removeCallbacks(playlistAutoScrollRunnable)
-                        playlistAutoScrollDirection = 0
-                        if (draggedUri != null) {
-                            // 이동한 곡을 화면 맨 위로 밀어 올리지 않고 현재 목록 위치를 유지합니다.
-                            savePlaylist()
-                        }
-                        playlistDragUri = null
-                        this@MainActivity.adapter.notifyDataSetChanged()
-                    }
-                }
-                handledDrag
-            }
         }
 
         adapter = object : ArrayAdapter<String>(            this,
@@ -914,94 +883,85 @@ class MainActivity : Activity() {
                 }
                 label.setPadding(dp(12), dp(9), dp(8), dp(9))
 
-                // 행 내부 TextView가 터치를 먼저 받아 ListView의 항목 클릭이
-                // 누락되는 경우에도 곡 선택/재생이 확실히 실행되도록 직접 연결합니다.
+                // 행에서 탭과 길게 누르기/드래그를 직접 관리해 터치 이벤트가 중간에 끊기지 않게 합니다.
                 label.isClickable = true
                 label.isFocusable = false
-                label.setOnClickListener {
-                    val clickedPosition = playlistView.getPositionForView(label)
-                    if (clickedPosition in songNames.indices) {
-                        if (selectionMode) {
-                            val clickedUri = playlist.getOrNull(clickedPosition)
-                            if (clickedUri != null && !selectedPlaylistItems.add(clickedUri)) {
-                                selectedPlaylistItems.remove(clickedUri)
-                            }
-                            this@MainActivity.adapter.notifyDataSetChanged()
-                            Toast.makeText(
-                                this@MainActivity,
-                                "${selectedPlaylistItems.size}곡 선택됨",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        } else {
-                            playTrack(clickedPosition)
+                label.setOnTouchListener { _, event ->
+                    val location = IntArray(2)
+                    playlistView.getLocationOnScreen(location)
+                    val x = event.rawX - location[0]
+                    val y = event.rawY - location[1]
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            playlistTouchPosition = playlistView.getPositionForView(label)
+                            playlistTouchDownX = event.rawX
+                            playlistTouchDownY = event.rawY
+                            handler.removeCallbacks(playlistLongPressRunnable)
+                            handler.postDelayed(
+                                playlistLongPressRunnable,
+                                android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                            )
+                            false
                         }
-                    }
-                }
-
-                // TextView가 클릭을 처리하더라도 길게 누르기 재정렬은 별도로 유지합니다.
-                label.setOnLongClickListener {
-                    val pressedPosition = playlistView.getPositionForView(label)
-                    if (!selectionMode && pressedPosition in songNames.indices) {
-                        highlightedIndex = pressedPosition
-                        playlistDragUri = playlist.getOrNull(pressedPosition)
-                        this@MainActivity.adapter.notifyDataSetChanged()
-                        Toast.makeText(
-                            this@MainActivity,
-                            "선택된 곡을 원하는 위치로 끌어 이동하세요.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        true
-                    } else {
-                        false
-                    }
-                }
-
-                // 길게 누른 뒤의 손가락 이동은 행의 TextView에서 직접 목록 위치로 전달합니다.
-                label.setOnTouchListener { view, event ->
-                    if (playlistDragUri == null) {
-                        false
-                    } else {
-                        val location = IntArray(2)
-                        playlistView.getLocationOnScreen(location)
-                        val x = (event.rawX - location[0]).toInt()
-                        val y = (event.rawY - location[1]).toInt()
-                        when (event.actionMasked) {
-                            android.view.MotionEvent.ACTION_MOVE -> {
-                                val draggedUri = playlistDragUri
-                                val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
-                                if (from in songNames.indices) {
-                                    val edgeSize = dp(48)
-                                    val direction = when {
-                                        y < edgeSize -> -1
-                                        y > playlistView.height - edgeSize -> 1
-                                        else -> 0
-                                    }
-                                    if (direction != playlistAutoScrollDirection) {
-                                        playlistAutoScrollDirection = direction
-                                        handler.removeCallbacks(playlistAutoScrollRunnable)
-                                        if (direction != 0) handler.post(playlistAutoScrollRunnable)
-                                    }
-                                    val target = playlistView.pointToPosition(
-                                        x.coerceIn(0, (playlistView.width - 1).coerceAtLeast(0)),
-                                        y.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
-                                    )
-                                    if (target in songNames.indices && target != from) {
-                                        movePlaylistItem(from, target)
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            if (playlistDragUri != null) {
+                                val edgeSize = dp(48)
+                                val direction = when {
+                                    y < edgeSize -> -1
+                                    y > playlistView.height - edgeSize -> 1
+                                    else -> 0
+                                }
+                                if (direction != playlistAutoScrollDirection) {
+                                    playlistAutoScrollDirection = direction
+                                    handler.removeCallbacks(playlistAutoScrollRunnable)
+                                    if (direction != 0) handler.post(playlistAutoScrollRunnable)
+                                }
+                                val target = playlistView.pointToPosition(
+                                    x.toInt().coerceIn(0, (playlistView.width - 1).coerceAtLeast(0)),
+                                    y.toInt().coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
+                                )
+                                if (target in playlist.indices) movePlaylistDragGroup(target)
+                                true
+                            } else {
+                                val slop = android.view.ViewConfiguration.get(this@MainActivity).scaledTouchSlop
+                                if (kotlin.math.abs(event.rawX - playlistTouchDownX) > slop ||
+                                    kotlin.math.abs(event.rawY - playlistTouchDownY) > slop
+                                ) handler.removeCallbacks(playlistLongPressRunnable)
+                                false
+                            }
+                        }
+                        android.view.MotionEvent.ACTION_UP -> {
+                            handler.removeCallbacks(playlistLongPressRunnable)
+                            if (playlistDragUri != null) {
+                                finishPlaylistDrag()
+                                true
+                            } else {
+                                val tappedPosition = playlistView.getPositionForView(label)
+                                if (tappedPosition in playlist.indices) {
+                                    if (selectionMode) {
+                                        val tappedUri = playlist[tappedPosition]
+                                        if (!selectedPlaylistItems.add(tappedUri)) {
+                                            selectedPlaylistItems.remove(tappedUri)
+                                        }
+                                        adapter.notifyDataSetChanged()
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "${selectedPlaylistItems.size}곡 선택됨",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        playTrack(tappedPosition)
                                     }
                                 }
-                                true
+                                false
                             }
-                            android.view.MotionEvent.ACTION_UP,
-                            android.view.MotionEvent.ACTION_CANCEL -> {
-                                handler.removeCallbacks(playlistAutoScrollRunnable)
-                                playlistAutoScrollDirection = 0
-                                savePlaylist()
-                                playlistDragUri = null
-                                this@MainActivity.adapter.notifyDataSetChanged()
-                                true
-                            }
-                            else -> true
                         }
+                        android.view.MotionEvent.ACTION_CANCEL -> {
+                            handler.removeCallbacks(playlistLongPressRunnable)
+                            if (playlistDragUri != null) finishPlaylistDrag()
+                            false
+                        }
+                        else -> playlistDragUri != null
                     }
                 }
 
