@@ -751,6 +751,42 @@ class MainActivity : Activity() {
                     playTrack(position)
                 }
             }
+            setOnItemLongClickListener { _, row, position, _ ->
+                if (selectionMode || position !in playlist.indices) {
+                    false
+                } else {
+                    val clip = android.content.ClipData.newPlainText("playlist_index", position.toString())
+                    val shadow = View.DragShadowBuilder(row)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        row.startDragAndDrop(clip, shadow, position, 0)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        row.startDrag(clip, shadow, position, 0)
+                    }
+                    true
+                }
+            }
+            setOnDragListener { _, event ->
+                when (event.action) {
+                    android.view.DragEvent.ACTION_DRAG_STARTED -> true
+                    android.view.DragEvent.ACTION_DRAG_ENTERED,
+                    android.view.DragEvent.ACTION_DRAG_LOCATION -> true
+                    android.view.DragEvent.ACTION_DROP -> {
+                        val source = event.localState as? Int
+                        val target = pointToPosition(event.x.toInt(), event.y.toInt())
+                        if (source != null && source in playlist.indices &&
+                            target != INVALID_POSITION && target in playlist.indices &&
+                            source != target
+                        ) {
+                            movePlaylistItem(source, target)
+                            Toast.makeText(this@MainActivity, "재생목록 순서를 변경했습니다.", Toast.LENGTH_SHORT).show()
+                        }
+                        true
+                    }
+                    android.view.DragEvent.ACTION_DRAG_ENDED -> true
+                    else -> true
+                }
+            }
         }
 
         adapter = object : ArrayAdapter<String>(            this,
@@ -2163,6 +2199,36 @@ class MainActivity : Activity() {
     // --------------------------------------------------
     // 플레이리스트 선택 / 삭제
     // --------------------------------------------------
+
+    /**
+     * Moves one playlist entry without changing the file itself.
+     * Keeps the currently playing song attached to its URI after reordering.
+     */
+    private fun movePlaylistItem(from: Int, to: Int) {
+        if (from !in playlist.indices || to !in playlist.indices || from == to) return
+
+        val playingUri = playlist.getOrNull(currentIndex)
+        val movedUri = playlist.removeAt(from)
+        val movedName = songNames.removeAt(from)
+        playlist.add(to, movedUri)
+        songNames.add(to, movedName)
+
+        currentIndex = playingUri?.let { playlist.indexOf(it) } ?: -1
+
+        val remappedSelections = selectedPlaylistItems.mapNotNull { oldIndex ->
+            when {
+                oldIndex == from -> to
+                from < to && oldIndex in (from + 1)..to -> oldIndex - 1
+                to < from && oldIndex in to until from -> oldIndex + 1
+                else -> oldIndex
+            }
+        }
+        selectedPlaylistItems.clear()
+        selectedPlaylistItems.addAll(remappedSelections)
+
+        adapter.notifyDataSetChanged()
+        savePlaylist()
+    }
 
     private fun toggleSelectionMode() {
         selectionMode = !selectionMode
