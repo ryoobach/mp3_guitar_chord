@@ -874,7 +874,7 @@ class MainActivity : Activity() {
                             savePlaylist()
                         }
                         playlistDragUri = null
-                        adapter.notifyDataSetChanged()
+                        this@MainActivity.adapter.notifyDataSetChanged()
                     }
                 }
                 handledDrag
