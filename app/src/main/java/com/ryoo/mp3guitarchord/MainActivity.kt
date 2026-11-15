@@ -938,6 +938,73 @@ class MainActivity : Activity() {
                     }
                 }
 
+                // TextView가 클릭을 처리하더라도 길게 누르기 재정렬은 별도로 유지합니다.
+                label.setOnLongClickListener {
+                    val pressedPosition = playlistView.getPositionForView(label)
+                    if (!selectionMode && pressedPosition in songNames.indices) {
+                        highlightedIndex = pressedPosition
+                        playlistDragUri = playlist.getOrNull(pressedPosition)
+                        this@MainActivity.adapter.notifyDataSetChanged()
+                        Toast.makeText(
+                            this@MainActivity,
+                            "선택된 곡을 원하는 위치로 끌어 이동하세요.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        true
+                    } else {
+                        false
+                    }
+                }
+
+                // 길게 누른 뒤의 손가락 이동은 행의 TextView에서 직접 목록 위치로 전달합니다.
+                label.setOnTouchListener { view, event ->
+                    if (playlistDragUri == null) {
+                        false
+                    } else {
+                        val location = IntArray(2)
+                        playlistView.getLocationOnScreen(location)
+                        val x = (event.rawX - location[0]).toInt()
+                        val y = (event.rawY - location[1]).toInt()
+                        when (event.actionMasked) {
+                            android.view.MotionEvent.ACTION_MOVE -> {
+                                val draggedUri = playlistDragUri
+                                val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
+                                if (from in songNames.indices) {
+                                    val edgeSize = dp(48)
+                                    val direction = when {
+                                        y < edgeSize -> -1
+                                        y > playlistView.height - edgeSize -> 1
+                                        else -> 0
+                                    }
+                                    if (direction != playlistAutoScrollDirection) {
+                                        playlistAutoScrollDirection = direction
+                                        handler.removeCallbacks(playlistAutoScrollRunnable)
+                                        if (direction != 0) handler.post(playlistAutoScrollRunnable)
+                                    }
+                                    val target = playlistView.pointToPosition(
+                                        x.coerceIn(0, (playlistView.width - 1).coerceAtLeast(0)),
+                                        y.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
+                                    )
+                                    if (target in songNames.indices && target != from) {
+                                        movePlaylistItem(from, target)
+                                    }
+                                }
+                                true
+                            }
+                            android.view.MotionEvent.ACTION_UP,
+                            android.view.MotionEvent.ACTION_CANCEL -> {
+                                handler.removeCallbacks(playlistAutoScrollRunnable)
+                                playlistAutoScrollDirection = 0
+                                savePlaylist()
+                                playlistDragUri = null
+                                this@MainActivity.adapter.notifyDataSetChanged()
+                                true
+                            }
+                            else -> true
+                        }
+                    }
+                }
+
                 // 현재 재생 대상으로 지정된 곡은 선명한 청록색,
                 // SEL 모드에서 삭제 대상으로 고른 곡은 금색으로 확실히 구분합니다.
                 label.setTextColor(
