@@ -99,15 +99,10 @@ class MainActivity : Activity() {
         val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
         if (anchorIndex < 0) return
         val movingDown = anchorIndex < target
-        // 터치 이벤트가 빠르게 연속 발생해도 위아래 이동 간격을 동일하게 제한합니다.
-        val moveDirection = if (movingDown) 1 else -1
+        // 방향 전환 때도 시간 기준을 초기화하지 않고, 모든 이동을 같은 간격으로 제한합니다.
+        // 방향값에 따라 제한이 풀리는 현상을 막기 위해 단일 시간 제한만 사용합니다.
         val now = SystemClock.elapsedRealtime()
-        if (playlistDragMoveDirection != moveDirection) {
-            playlistDragMoveDirection = moveDirection
-            playlistDragMoveAtMs = now
-            return
-        }
-        if (now - playlistDragMoveAtMs < 65L) return
+        if (now - playlistDragMoveAtMs < 120L) return
         playlistDragMoveAtMs = now
 
         // 한 곡을 이동할 때 위아래 모두 한 번에 한 칸씩 같은 속도로 이동합니다.
