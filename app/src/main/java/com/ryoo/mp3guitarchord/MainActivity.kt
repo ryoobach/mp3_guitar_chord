@@ -67,6 +67,8 @@ class MainActivity : Activity() {
         }
     }
     private var playlistAutoScrollDirection = 0
+    private var playlistDragMoveDirection = 0
+    private var playlistDragMoveAtMs = 0L
 
     // 드래그 중 목록 가장자리에 머무르면 스크롤과 항목 이동을 반복합니다.
     private val playlistAutoScrollRunnable = object : Runnable {
@@ -99,6 +101,22 @@ class MainActivity : Activity() {
         val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
         if (anchorIndex < 0) return
         val movingDown = anchorIndex < target
+
+        // 아래로 방향을 바꾼 직후에는 한 번만 즉시 이동하고, 이후에는
+        // 이동 간격을 두어 항목이 손가락 아래에서 연속으로 튀어 내려가는 현상을 막습니다.
+        val now = SystemClock.elapsedRealtime()
+        if (movingDown) {
+            if (playlistDragMoveDirection != 1) {
+                playlistDragMoveDirection = 1
+                playlistDragMoveAtMs = now
+            } else {
+                if (now - playlistDragMoveAtMs < 180L) return
+                playlistDragMoveAtMs = now
+            }
+        } else {
+            playlistDragMoveDirection = -1
+            playlistDragMoveAtMs = now
+        }
 
         val currentUri = playlist.getOrNull(currentIndex)
         val highlightedUri = playlist.getOrNull(highlightedIndex)
@@ -160,6 +178,8 @@ class MainActivity : Activity() {
     private fun finishPlaylistDrag() {
         handler.removeCallbacks(playlistAutoScrollRunnable)
         playlistAutoScrollDirection = 0
+        playlistDragMoveDirection = 0
+        playlistDragMoveAtMs = 0L
         val didMovePlaylistItem = playlistDragUri != null
         if (didMovePlaylistItem) savePlaylist()
         playlistDragUri = null
