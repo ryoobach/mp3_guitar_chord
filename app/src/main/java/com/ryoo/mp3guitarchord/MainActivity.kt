@@ -99,6 +99,17 @@ class MainActivity : Activity() {
         val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
         if (anchorIndex < 0) return
         val movingDown = anchorIndex < target
+        // 터치 이벤트가 빠르게 연속 발생해도 위아래 이동 간격을 동일하게 제한합니다.
+        val moveDirection = if (movingDown) 1 else -1
+        val now = SystemClock.elapsedRealtime()
+        if (playlistDragMoveDirection != moveDirection) {
+            playlistDragMoveDirection = moveDirection
+            playlistDragMoveAtMs = now
+            return
+        }
+        if (now - playlistDragMoveAtMs < 65L) return
+        playlistDragMoveAtMs = now
+
         // 한 곡을 이동할 때 위아래 모두 한 번에 한 칸씩 같은 속도로 이동합니다.
         val safeTarget = if (movingUris.size == 1) {
             if (movingDown) minOf(target, anchorIndex + 1)
