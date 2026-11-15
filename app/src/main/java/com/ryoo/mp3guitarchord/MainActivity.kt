@@ -71,22 +71,27 @@ class MainActivity : Activity() {
     private var playlistDragPointerX = 0
     private var playlistDragPointerY = 0
 
-    // 가장자리 자동 스크롤은 손가락 위치를 기준으로 천천히 진행합니다.
+    // 창 안팎에서 일정한 속도로 이어지는 가장자리 자동 스크롤입니다.
     private val playlistAutoScrollRunnable = object : Runnable {
         override fun run() {
             val direction = playlistAutoScrollDirection
             if (playlistDragUri == null || direction == 0 || !::playlistView.isInitialized) return
 
-            // 짧은 시간에 목록이 튀어 오르지 않도록 이동량과 반복 간격을 낮춥니다.
-            playlistView.scrollListBy(direction * dp(4))
-            val target = playlistView.pointToPosition(
-                playlistDragPointerX.coerceIn(0, (playlistView.width - 1).coerceAtLeast(0)),
-                playlistDragPointerY.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
-            )
-            if (target in playlist.indices) {
-                movePlaylistDragGroup(target, preserveViewport = false)
+            // 화면 이동과 실제 곡 재배치를 같은 박자로 진행해 미세한 떨림과 지연을 줄입니다.
+            playlistView.scrollListBy(direction * dp(8))
+            val pointerX = playlistDragPointerX.coerceIn(0, (playlistView.width - 1).coerceAtLeast(0))
+            val pointerY = playlistDragPointerY.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
+            val hitPosition = playlistView.pointToPosition(pointerX, pointerY)
+            val target = when {
+                hitPosition in playlist.indices -> hitPosition
+                direction < 0 -> playlistView.firstVisiblePosition.coerceIn(0, (playlist.size - 1).coerceAtLeast(0))
+                else -> playlistView.lastVisiblePosition.coerceIn(0, (playlist.size - 1).coerceAtLeast(0))
             }
-            handler.postDelayed(this, 120L)
+            if (target in playlist.indices) {
+                // 스크롤 직후의 화면 위치를 보존해 어댑터 갱신 때 목록이 튀지 않게 합니다.
+                movePlaylistDragGroup(target, preserveViewport = true)
+            }
+            handler.postDelayed(this, 75L)
         }
     }
 
@@ -97,10 +102,9 @@ class MainActivity : Activity() {
         val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
         if (anchorIndex < 0) return
         val movingDown = anchorIndex < target
-        // 방향 전환 때도 시간 기준을 초기화하지 않고, 모든 이동을 같은 간격으로 제한합니다.
-        // 방향값에 따라 제한이 풀리는 현상을 막기 위해 단일 시간 제한만 사용합니다.
+        // 창 안의 손가락 이동과 창 밖 자동 이동이 같은 리듬으로 이어지도록 제한 간격을 맞춥니다.
         val now = SystemClock.elapsedRealtime()
-        if (now - playlistDragMoveAtMs < 120L) return
+        if (now - playlistDragMoveAtMs < 75L) return
         playlistDragMoveAtMs = now
 
         // 한 곡을 이동할 때 위아래 모두 한 번에 한 칸씩 같은 속도로 이동합니다.
