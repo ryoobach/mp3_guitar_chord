@@ -775,7 +775,7 @@ class MainActivity : Activity() {
                         val source = event.localState as? Int
                         val target = pointToPosition(event.x.toInt(), event.y.toInt())
                         if (source != null && source in playlist.indices &&
-                            target != INVALID_POSITION && target in playlist.indices &&
+                            target != ListView.INVALID_POSITION && target in playlist.indices &&
                             source != target
                         ) {
                             movePlaylistItem(source, target)
