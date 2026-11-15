@@ -106,9 +106,6 @@ class MainActivity : Activity() {
 
         currentIndex = remap(currentIndex)
         highlightedIndex = remap(highlightedIndex)
-        val remappedSelection = selectedPlaylistItems.map { remap(it) }.toSet()
-        selectedPlaylistItems.clear()
-        selectedPlaylistItems.addAll(remappedSelection)
 
         adapter.notifyDataSetChanged()
 
@@ -136,7 +133,7 @@ class MainActivity : Activity() {
     private var shuffleMode = false
     private var repeatMode = 0
     private var selectionMode = false
-    private val selectedPlaylistItems = mutableSetOf<Int>()
+    private val selectedPlaylistItems = mutableSetOf<Uri>()
 
     private lateinit var elapsedTimeText: TextView
     private lateinit var totalTimeText: TextView
@@ -814,8 +811,9 @@ class MainActivity : Activity() {
             setOnItemClickListener { _, _, position, _ ->
                 highlightedIndex = position
                 if (selectionMode) {
-                    if (!selectedPlaylistItems.add(position)) {
-                        selectedPlaylistItems.remove(position)
+                    val clickedUri = playlist.getOrNull(position)
+                    if (clickedUri != null && !selectedPlaylistItems.add(clickedUri)) {
+                        selectedPlaylistItems.remove(clickedUri)
                     }
                     this@MainActivity.adapter.notifyDataSetChanged()
                 } else {
@@ -891,7 +889,7 @@ class MainActivity : Activity() {
                 parent: android.view.ViewGroup
             ): View {
                 val label = (super.getView(position, convertView, parent) as TextView)
-                val isSelected = position in selectedPlaylistItems
+                val isSelected = playlist.getOrNull(position) in selectedPlaylistItems
                 val isDragging = playlistDragUri != null && playlist.getOrNull(position) == playlistDragUri
                 val isCurrentTrack = position == highlightedIndex || (highlightedIndex < 0 && position == currentIndex && player != null)
 
@@ -2526,7 +2524,7 @@ class MainActivity : Activity() {
     private fun selectAllPlaylistItems() {
         selectionMode = true
         selectedPlaylistItems.clear()
-        selectedPlaylistItems.addAll(playlist.indices)
+        selectedPlaylistItems.addAll(playlist)
         updateSelectionButtonAppearance()
         adapter.notifyDataSetChanged()
     }
@@ -2565,11 +2563,7 @@ class MainActivity : Activity() {
         }
         playlist.removeAt(index)
         songNames.removeAt(index)
-        val shiftedSelections = selectedPlaylistItems
-            .filter { it != index }
-            .map { if (it > index) it - 1 else it }
-        selectedPlaylistItems.clear()
-        selectedPlaylistItems.addAll(shiftedSelections)
+        selectedPlaylistItems.remove(playlist.getOrNull(index))
         if (currentIndex > index) currentIndex--
         if (highlightedIndex > index) highlightedIndex--
         else if (highlightedIndex == index) highlightedIndex = (index - 1).coerceAtMost(playlist.lastIndex)
@@ -2626,8 +2620,8 @@ class MainActivity : Activity() {
             return
         }
 
-        val removeIndexes = selectedPlaylistItems
-            .filter { it in playlist.indices }
+        val removeIndexes = playlist.indices
+            .filter { playlist[it] in selectedPlaylistItems }
             .sortedDescending()
 
         if (removeIndexes.isEmpty()) {
