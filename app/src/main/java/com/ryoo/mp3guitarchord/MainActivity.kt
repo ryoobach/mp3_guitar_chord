@@ -1410,7 +1410,8 @@ class MainActivity : Activity() {
         songTitle.marqueeRepeatLimit = -1
         songTitle.isFocusable = true
         songTitle.isFocusableInTouchMode = true
-        songTitle.isSelected = false        songTitle.requestLayout()
+        songTitle.isSelected = false
+        songTitle.requestLayout()
         songTitle.post {
             if (::songTitle.isInitialized) {
                 songTitle.isSelected = true
@@ -2809,7 +2810,8 @@ class MainActivity : Activity() {
                                 peak = maxOf(peak, kotlin.math.hypot(real, imaginary))
                             }
 
-                            val heldPeak = maxOf(peak, spectrumPeakHold[bar] * 0.965)                            spectrumPeakHold[bar] = heldPeak
+                            val heldPeak = maxOf(peak, spectrumPeakHold[bar] * 0.965)
+                            spectrumPeakHold[bar] = heldPeak
                             val level = if (peak < 2.0) {
                                 0.025
                             } else {
