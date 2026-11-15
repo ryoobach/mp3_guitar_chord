@@ -96,21 +96,28 @@ class MainActivity : Activity() {
     private fun movePlaylistDragGroup(target: Int, preserveViewport: Boolean = true) {
         val movingUris = playlistDragUris.toSet()
         if (movingUris.isEmpty() || target !in playlist.indices) return
-        val targetUri = playlist[target]
-        if (targetUri in movingUris) return
         val anchorIndex = playlistDragUri?.let { playlist.indexOf(it) } ?: -1
         if (anchorIndex < 0) return
         val movingDown = anchorIndex < target
+        // 한 곡을 아래로 끌 때는 한 번에 한 칸만 이동시켜 손가락 아래에서
+        // 여러 항목을 연속으로 통과하며 급격히 내려가는 현상을 방지합니다.
+        val safeTarget = if (movingDown && movingUris.size == 1) {
+            minOf(target, anchorIndex + 1)
+        } else {
+            target
+        }
+        val targetUri = playlist.getOrNull(safeTarget) ?: return
+        if (targetUri in movingUris) return
 
-        // 아래로 방향을 바꾼 직후에는 한 번만 즉시 이동하고, 이후에는
-        // 이동 간격을 두어 항목이 손가락 아래에서 연속으로 튀어 내려가는 현상을 막습니다.
+        // 아래로 방향을 바꾼 직후에는 한 칸만 즉시 이동하고, 이후에는
+        // 250ms 간격을 두어 내려가는 속도를 일정하게 제한합니다.
         val now = SystemClock.elapsedRealtime()
         if (movingDown) {
             if (playlistDragMoveDirection != 1) {
                 playlistDragMoveDirection = 1
                 playlistDragMoveAtMs = now
             } else {
-                if (now - playlistDragMoveAtMs < 180L) return
+                if (now - playlistDragMoveAtMs < 250L) return
                 playlistDragMoveAtMs = now
             }
         } else {
