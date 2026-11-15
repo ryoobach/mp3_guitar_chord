@@ -790,10 +790,14 @@ class MainActivity : Activity() {
             }
             setOnItemLongClickListener { _, _, position, _ ->
                 if (position in songNames.indices) {
+                    // 길게 누른 곡을 즉시 선택 표시한 뒤, 같은 곡을 기준으로 드래그합니다.
+                    highlightedIndex = position
                     playlistDragUri = playlist.getOrNull(position)
+                    this@MainActivity.adapter.notifyDataSetChanged()
+                    invalidateViews()
                     Toast.makeText(
                         this@MainActivity,
-                        "곡을 위아래로 끌어 순서를 바꾸세요.",
+                        "선택된 곡을 원하는 위치로 끌어 이동하세요.",
                         Toast.LENGTH_SHORT
                     ).show()
                     true
@@ -820,6 +824,7 @@ class MainActivity : Activity() {
                             savePlaylist()
                         }
                         playlistDragUri = null
+                        adapter.notifyDataSetChanged()
                     }
                 }
                 false
@@ -837,6 +842,7 @@ class MainActivity : Activity() {
             ): View {
                 val label = (super.getView(position, convertView, parent) as TextView)
                 val isSelected = position in selectedPlaylistItems
+                val isDragging = playlistDragUri != null && playlist.getOrNull(position) == playlistDragUri
                 val isCurrentTrack = position == highlightedIndex || (highlightedIndex < 0 && position == currentIndex && player != null)
 
                 label.text = songNames[position]
@@ -851,6 +857,7 @@ class MainActivity : Activity() {
                 // 현재 재생 곡은 청록색, SEL 모드에서 고른 곡은 금색으로 구분합니다.
                 label.setTextColor(
                     when {
+                        isDragging -> Color.WHITE
                         isSelected -> Color.rgb(255, 220, 115)
                         isCurrentTrack -> Color.rgb(85, 213, 255)
                         else -> Color.rgb(245, 245, 245)
@@ -858,6 +865,7 @@ class MainActivity : Activity() {
                 )
                 label.setBackgroundColor(
                     when {
+                        isDragging -> Color.rgb(0, 112, 150)
                         isSelected -> Color.rgb(83, 66, 31)
                         isCurrentTrack -> Color.rgb(22, 61, 83)
                         else -> Color.rgb(16, 31, 50)
