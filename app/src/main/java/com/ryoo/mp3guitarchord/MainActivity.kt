@@ -57,6 +57,28 @@ class MainActivity : Activity() {
     private var folderSelectionMode = false
     private var highlightedIndex = -1
     private var playlistDragUri: Uri? = null
+    private var playlistAutoScrollDirection = 0
+
+    // 드래그 포인터가 목록 가장자리에 머무르면 목록을 계속 스크롤합니다.
+    private val playlistAutoScrollRunnable = object : Runnable {
+        override fun run() {
+            val direction = playlistAutoScrollDirection
+            if (playlistDragUri == null || direction == 0 || !::playlistView.isInitialized) return
+
+            playlistView.scrollListBy(direction * dp(14))
+            val edgeY = if (direction < 0) dp(8) else playlistView.height - dp(8)
+            val target = playlistView.pointToPosition(
+                (playlistView.width / 2).coerceAtLeast(0),
+                edgeY.coerceIn(0, (playlistView.height - 1).coerceAtLeast(0))
+            )
+            val draggedUri = playlistDragUri
+            val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
+            if (from in playlist.indices && target in playlist.indices && target != from) {
+                movePlaylistItem(from, target)
+            }
+            handler.postDelayed(this, 40L)
+        }
+    }
 
     /** Reorders one playlist row while keeping playback and selection attached to the same songs. */
     private fun movePlaylistItem(from: Int, to: Int) {
@@ -815,13 +837,27 @@ class MainActivity : Activity() {
                     true
                 } else false
             }
-            setOnTouchListener { view, event ->
+            setOnTouchListener { _, event ->
+                var handledDrag = playlistDragUri != null
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val draggedUri = playlistDragUri
                         val from = draggedUri?.let { playlist.indexOf(it) } ?: -1
                         if (from in songNames.indices) {
-                            val target = pointToPosition(event.x.toInt(), event.y.toInt())
+                            val edgeSize = dp(48)
+                            val direction = when {
+                                event.y < edgeSize -> -1
+                                event.y > height - edgeSize -> 1
+                                else -> 0
+                            }
+                            if (direction != playlistAutoScrollDirection) {
+                                playlistAutoScrollDirection = direction
+                                handler.removeCallbacks(playlistAutoScrollRunnable)
+                                if (direction != 0) handler.post(playlistAutoScrollRunnable)
+                            }
+
+                            val targetY = event.y.toInt().coerceIn(0, (height - 1).coerceAtLeast(0))
+                            val target = pointToPosition(event.x.toInt(), targetY)
                             if (target in songNames.indices && target != from) {
                                 movePlaylistItem(from, target)
                             }
@@ -830,16 +866,18 @@ class MainActivity : Activity() {
                     android.view.MotionEvent.ACTION_UP,
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         val draggedUri = playlistDragUri
+                        handledDrag = draggedUri != null
+                        handler.removeCallbacks(playlistAutoScrollRunnable)
+                        playlistAutoScrollDirection = 0
                         if (draggedUri != null) {
-                            // setSelection()은 이동한 곡을 화면 맨 위로 밀어 올리므로 사용하지 않습니다.
-                            // 재정렬 중 유지한 목록 위치와 주변 곡 표시를 그대로 둡니다.
+                            // 이동한 곡을 화면 맨 위로 밀어 올리지 않고 현재 목록 위치를 유지합니다.
                             savePlaylist()
                         }
                         playlistDragUri = null
                         adapter.notifyDataSetChanged()
                     }
                 }
-                false
+                handledDrag
             }
         }
 
