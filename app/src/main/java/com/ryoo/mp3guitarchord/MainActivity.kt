@@ -914,6 +914,30 @@ class MainActivity : Activity() {
                 }
                 label.setPadding(dp(12), dp(9), dp(8), dp(9))
 
+                // 행 내부 TextView가 터치를 먼저 받아 ListView의 항목 클릭이
+                // 누락되는 경우에도 곡 선택/재생이 확실히 실행되도록 직접 연결합니다.
+                label.isClickable = true
+                label.isFocusable = false
+                label.setOnClickListener {
+                    val clickedPosition = playlistView.getPositionForView(label)
+                    if (clickedPosition in songNames.indices) {
+                        if (selectionMode) {
+                            val clickedUri = playlist.getOrNull(clickedPosition)
+                            if (clickedUri != null && !selectedPlaylistItems.add(clickedUri)) {
+                                selectedPlaylistItems.remove(clickedUri)
+                            }
+                            this@MainActivity.adapter.notifyDataSetChanged()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "${selectedPlaylistItems.size}곡 선택됨",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            playTrack(clickedPosition)
+                        }
+                    }
+                }
+
                 // 현재 재생 대상으로 지정된 곡은 선명한 청록색,
                 // SEL 모드에서 삭제 대상으로 고른 곡은 금색으로 확실히 구분합니다.
                 label.setTextColor(
