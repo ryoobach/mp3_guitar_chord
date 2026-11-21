@@ -1148,7 +1148,7 @@ class MainActivity : Activity() {
             makeButton(symbol).apply {
                 textSize = 18f
                 contentDescription = description
-                tooltipText = description
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) tooltipText = description
                 setOnClickListener { action() }
             }
         val buttons = listOf(
@@ -1166,7 +1166,8 @@ class MainActivity : Activity() {
             iconButton("⌫", "로그 지우기") {
                 synchronized(diagnosticEntries) { diagnosticEntries.clear() }
                 logText.text = "로그를 지웠습니다.\n재생 버튼을 눌러 새 진단을 시작해 주세요."
-            }
+            },
+            iconButton("×", "로그 창 닫기") { diagnosticLogDialog?.dismiss() }
         )
         buttons.forEach { button ->
             actions.addView(button, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
@@ -2208,7 +2209,7 @@ class MainActivity : Activity() {
             }
             mp.prepareAsync()
         } catch (error: Exception) {
-            appendDiagnosticLog("재생 초기화 실패 · ${error.javaClass.simpleName}: ${error.message.orEmpty().take(180)}")
+            appendDiagnosticLog("재생 초기화 실패 · ${error.javaClass.simpleName}")
             releaseCurrentPlayer()
             playButton.text = "▶"
             Toast.makeText(this, "재생을 시작할 수 없습니다.", Toast.LENGTH_SHORT).show()
@@ -2640,7 +2641,7 @@ class MainActivity : Activity() {
             audioVisualizer = visualizer
             appendDiagnosticLog("오디오 분석기 연결 성공 · sessionId=$audioSessionId")
         } catch (error: Exception) {
-            appendDiagnosticLog("오디오 분석기 연결 실패 · ${error.javaClass.simpleName}: ${error.message.orEmpty().take(140)}")
+            appendDiagnosticLog("오디오 분석기 연결 실패 · ${error.javaClass.simpleName}")
             analyzerView.setSpectrum(FloatArray(48))
             Toast.makeText(
                 this,
