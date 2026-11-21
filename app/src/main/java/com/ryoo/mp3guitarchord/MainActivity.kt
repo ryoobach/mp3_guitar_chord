@@ -6,6 +6,8 @@ import android.app.Activity
 import android.animation.ValueAnimator
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
@@ -111,6 +113,12 @@ class MainActivity : Activity() {
     private lateinit var selectButton: Button
 
     private val handler = Handler(Looper.getMainLooper())
+    private val diagnosticEntries = mutableListOf<String>()
+    private var diagnosticLogTextView: TextView? = null
+    private var diagnosticLogScrollView: ScrollView? = null
+    private var diagnosticLogDialog: AlertDialog? = null
+    private var pendingDiagnosticExport = ""
+    private val diagnosticExportRequestCode = 324
 
     // Restarts the platform Visualizer if Android stops delivering FFT packets
     // while the track is still playing. The chord history is preserved.
@@ -164,6 +172,7 @@ class MainActivity : Activity() {
         configureSystemBars()
         createScreen()
         updateModeButtons()
+        appendDiagnosticLog("앱 시작 · 버전 ${packageManager.getPackageInfo(packageName, 0).versionName}")
         handler.post(updateTask)
     }
 
@@ -325,6 +334,12 @@ class MainActivity : Activity() {
             }
         }
 
+        val logButton = makeButton("▤").apply {
+            textSize = 13f
+            contentDescription = "진단 로그 보기"
+            setOnClickListener { showDiagnosticLogDialog() }
+        }
+
         val developerButton = makeButton("ⓘ").apply {
             textSize = 10f
             contentDescription = "개발자 정보"
@@ -343,6 +358,7 @@ class MainActivity : Activity() {
         }
 
         topBar.addView(homeButton, topButtonParams(isCompact))
+        topBar.addView(logButton, topButtonParams(isCompact))
         topBar.addView(developerButton, topButtonParams(isCompact))
         topBar.addView(exitButton, topButtonParams(isCompact))
 
@@ -1064,6 +1080,144 @@ class MainActivity : Activity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setImageBitmap(Bitmap.createScaledBitmap(bitmap, size, size, true))
             contentDescription = "일렉트릭 스트라토캐스터 기타 모양의 Easy MP3 Guitar Chord 앱 아이콘"
+        }
+    }
+
+
+    // --------------------------------------------------
+    // 진단 로그 창
+    // --------------------------------------------------
+
+    private fun appendDiagnosticLog(message: String) {
+        val stamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(java.util.Date())
+        val entry = "[$stamp] $message"
+        synchronized(diagnosticEntries) {
+            diagnosticEntries.add(entry)
+            while (diagnosticEntries.size > 1500) diagnosticEntries.removeAt(0)
+        }
+        runOnUiThread {
+            diagnosticLogTextView?.let { view ->
+                view.text = synchronized(diagnosticEntries) { diagnosticEntries.joinToString("\n") }
+                diagnosticLogScrollView?.post { diagnosticLogScrollView?.fullScroll(View.FOCUS_DOWN) }
+            }
+        }
+        Log.i("EasyChordDiag", message)
+    }
+
+    private fun diagnosticLogSnapshot(): String =
+        synchronized(diagnosticEntries) { diagnosticEntries.joinToString("\n") }
+
+    private fun showDiagnosticLogDialog() {
+        if (diagnosticLogDialog?.isShowing == true) return
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(8))
+            setBackgroundColor(Color.rgb(8, 15, 27))
+        }
+        panel.addView(TextView(this).apply {
+            text = "재생 진단 로그"
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(85, 213, 255))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, 0, dp(8))
+        })
+        val logText = TextView(this).apply {
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.rgb(215, 226, 238))
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            text = diagnosticLogSnapshot().ifBlank { "아직 기록된 로그가 없습니다.\n재생 버튼을 눌러 진단을 시작해 주세요." }
+        }
+        val scroll = ScrollView(this).apply {
+            background = roundedBackground(Color.rgb(13, 26, 42), Color.rgb(52, 97, 122))
+            isFillViewport = true
+            addView(logText)
+        }
+        panel.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(260)
+        ).apply { bottomMargin = dp(10) })
+        diagnosticLogTextView = logText
+        diagnosticLogScrollView = scroll
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun iconButton(symbol: String, description: String, action: () -> Unit): Button =
+            makeButton(symbol).apply {
+                textSize = 18f
+                contentDescription = description
+                tooltipText = description
+                setOnClickListener { action() }
+            }
+        val buttons = listOf(
+            iconButton("▶", "재생 또는 이어 재생") {
+                appendDiagnosticLog("로그 창에서 재생 버튼 선택")
+                togglePlayback()
+            },
+            iconButton("■", "정지") { stopPlayback() },
+            iconButton("↓", "로그 저장") { requestDiagnosticLogSave() },
+            iconButton("▢", "로그 복사") {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Easy MP3 Guitar Chord 진단 로그", diagnosticLogSnapshot()))
+                Toast.makeText(this, "로그를 복사했습니다.", Toast.LENGTH_SHORT).show()
+            },
+            iconButton("⌫", "로그 지우기") {
+                synchronized(diagnosticEntries) { diagnosticEntries.clear() }
+                logText.text = "로그를 지웠습니다.\n재생 버튼을 눌러 새 진단을 시작해 주세요."
+            }
+        )
+        buttons.forEach { button ->
+            actions.addView(button, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                setMargins(dp(2), 0, dp(2), 0)
+            })
+        }
+        panel.addView(actions)
+        val dialog = AlertDialog.Builder(this).setView(panel).create()
+        diagnosticLogDialog = dialog
+        dialog.setOnDismissListener {
+            diagnosticLogTextView = null
+            diagnosticLogScrollView = null
+            diagnosticLogDialog = null
+        }
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(32), dp(430)), LinearLayout.LayoutParams.WRAP_CONTENT)
+        appendDiagnosticLog("진단 로그 창 열기")
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun requestDiagnosticLogSave() {
+        pendingDiagnosticExport = diagnosticLogSnapshot()
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, "Easy_MP3_Guitar_Chord_Diagnostic_Log.txt")
+        }
+        try {
+            startActivityForResult(intent, diagnosticExportRequestCode)
+        } catch (error: Exception) {
+            appendDiagnosticLog("로그 저장 창을 열지 못함 · \${error.javaClass.simpleName}")
+            Toast.makeText(this, "로그 저장 기능을 사용할 수 없습니다.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == diagnosticExportRequestCode) {
+            if (resultCode == Activity.RESULT_OK && data?.data != null) {
+                try {
+                    contentResolver.openOutputStream(data.data!!)?.use { output ->
+                        output.write(pendingDiagnosticExport.toByteArray(Charsets.UTF_8))
+                    } ?: throw IllegalStateException("출력 파일을 열 수 없습니다.")
+                    Toast.makeText(this, "로그 파일을 저장했습니다.", Toast.LENGTH_SHORT).show()
+                } catch (error: Exception) {
+                    Toast.makeText(this, "로그 저장 실패: \${error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                    appendDiagnosticLog("로그 파일 저장 실패 · \${error.javaClass.simpleName}")
+                }
+            }
+            pendingDiagnosticExport = ""
         }
     }
 
@@ -1932,6 +2086,7 @@ class MainActivity : Activity() {
 
         if (index !in playlist.indices) return
 
+        appendDiagnosticLog("재생 요청 · ${songNames.getOrNull(index) ?: "선택 항목"}")
         releaseCurrentPlayer()
         currentIndex = index
         savePlaylist()
@@ -1953,13 +2108,16 @@ class MainActivity : Activity() {
         // 네트워크 확인은 UI 스레드를 막지 않도록 별도 스레드에서 수행합니다.
         Thread({
             try {
+                appendDiagnosticLog("인터넷 방송 주소 확인 시작")
                 val resolvedUrl = StreamAddressResolver.resolve(uri.toString())
+                appendDiagnosticLog("인터넷 방송 주소 확인 완료")
                 runOnUiThread {
                     if (currentIndex == index && playlist.getOrNull(index) == uri) {
                         startTrackPlayback(index, uri, resolvedUrl)
                     }
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                appendDiagnosticLog("방송 주소 확인 실패 · ${error.javaClass.simpleName}")
                 runOnUiThread {
                     if (currentIndex == index && playlist.getOrNull(index) == uri) {
                         playButton.text = "▶"
@@ -1980,6 +2138,7 @@ class MainActivity : Activity() {
     private fun startTrackPlayback(index: Int, originalUri: Uri, playbackUrl: String) {
         try {
             val isStream = originalUri.scheme == "http" || originalUri.scheme == "https"
+            appendDiagnosticLog("플레이어 생성 · ${if (isStream) "인터넷 스트림" else "로컬 파일"}")
             val mp = MediaPlayer()
             player = mp
             isPrepared = false
@@ -2002,6 +2161,7 @@ class MainActivity : Activity() {
                 if (player !== prepared) return@setOnPreparedListener
 
                 isPrepared = true
+                appendDiagnosticLog("오디오 준비 완료 · 재생시간 ${prepared.duration}ms · audioSession=${prepared.audioSessionId}")
                 val volume = volumeBar.value / 100f
                 prepared.setVolume(volume, volume)
 
@@ -2012,6 +2172,7 @@ class MainActivity : Activity() {
 
                 updateTimeDisplay(0, prepared.duration)
                 prepared.start()
+                appendDiagnosticLog("재생 시작 명령 성공")
                 lastFftReceivedMs = 0L
                 attachAudioVisualizer(prepared.audioSessionId)
                 handler.removeCallbacks(chordVisualizerWatchdog)
@@ -2030,8 +2191,12 @@ class MainActivity : Activity() {
                 playButton.text = "Ⅱ"
             }
 
-            mp.setOnCompletionListener { handleTrackCompletion() }
-            mp.setOnErrorListener { _, _, _ ->
+            mp.setOnCompletionListener {
+                appendDiagnosticLog("재생 완료")
+                handleTrackCompletion()
+            }
+            mp.setOnErrorListener { _, what, extra ->
+                appendDiagnosticLog("MediaPlayer 오류 · what=$what · extra=$extra")
                 isPrepared = false
                 playButton.text = "▶"
                 Toast.makeText(
@@ -2042,7 +2207,8 @@ class MainActivity : Activity() {
                 true
             }
             mp.prepareAsync()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            appendDiagnosticLog("재생 초기화 실패 · ${error.javaClass.simpleName}: ${error.message.orEmpty().take(180)}")
             releaseCurrentPlayer()
             playButton.text = "▶"
             Toast.makeText(this, "재생을 시작할 수 없습니다.", Toast.LENGTH_SHORT).show()
@@ -2075,9 +2241,11 @@ class MainActivity : Activity() {
 
         if (mp.isPlaying) {
             mp.pause()
+            appendDiagnosticLog("재생 일시정지")
             playButton.text = "▶"
         } else {
             mp.start()
+            appendDiagnosticLog("재생 재개")
             playButton.text = "Ⅱ"
         }
     }
@@ -2094,6 +2262,7 @@ class MainActivity : Activity() {
                 }
 
                 mp.seekTo(0)
+                appendDiagnosticLog("재생 정지 · 처음 위치로 이동")
                 progressBar.setPosition(0)
                 updateTimeDisplay(0, mp.duration)
                 resetAndRestartChordAnalysis(mp)
@@ -2395,11 +2564,13 @@ class MainActivity : Activity() {
                             val fftBinWidthHz = (samplingRate / 1000.0) / fft.size
                             val probeBins = intArrayOf(0, 12, 24, 36, 47)
                                 .joinToString(",") { index -> "${index}:${"%.1f".format(spectrumPeakHold[index])}" }
+                            val fftMessage = "FFT 분석 · audioSignal=$hasAudioSignal · chord=${detectedChord ?: "미검출"} · sampleRateMilliHz=$samplingRate · ${ChordDetector.lastDiagnostic}"
                             Log.i(
                                 "EasyChord",
                                 "fftSize=${fft.size} sampleRateMilliHz=$samplingRate binWidthHz=${"%.2f".format(fftBinWidthHz)} " +
                                     "audioSignal=$hasAudioSignal spectrumPeakHold=[$probeBins] ${ChordDetector.lastDiagnostic}"
                             )
+                            appendDiagnosticLog(fftMessage)
                         }
                         runOnUiThread {
                             if (analysisGeneration != chordAnalysisGeneration) return@runOnUiThread
@@ -2467,7 +2638,9 @@ class MainActivity : Activity() {
             )
             visualizer.enabled = true
             audioVisualizer = visualizer
-        } catch (_: Exception) {
+            appendDiagnosticLog("오디오 분석기 연결 성공 · sessionId=$audioSessionId")
+        } catch (error: Exception) {
+            appendDiagnosticLog("오디오 분석기 연결 실패 · ${error.javaClass.simpleName}: ${error.message.orEmpty().take(140)}")
             analyzerView.setSpectrum(FloatArray(48))
             Toast.makeText(
                 this,
